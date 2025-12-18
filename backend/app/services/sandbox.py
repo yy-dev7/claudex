@@ -1199,6 +1199,35 @@ class SandboxService:
 
         return process, initial_output
 
+    async def clean_session_thinking_blocks(
+        self, sandbox_id: str, session_id: str
+    ) -> bool:
+        session_file = f"/home/user/.claude/projects/-home-user/{session_id}.jsonl"
+        temp_file = f"{session_file}.tmp"
+
+        jq_filter = (
+            'if .message.content and (.message.content | type) == "array" then '
+            '.message.content |= [.[] | select((.type | IN("thinking", "redacted_thinking") | not) or ((.signature // "") | length) >= 10)] '
+            "else . end"
+        )
+
+        try:
+            cmd = (
+                f"[ -f {shlex.quote(session_file)} ] && "
+                f"jq -c '{jq_filter}' {shlex.quote(session_file)} > {shlex.quote(temp_file)} && "
+                f"mv {shlex.quote(temp_file)} {shlex.quote(session_file)} && echo 'OK'"
+            )
+            result = await self.execute_command(sandbox_id, cmd)
+
+            if "OK" in result:
+                logger.info("Cleaned thinking blocks from session %s", session_id)
+                return True
+
+            return False
+        except Exception as e:
+            logger.error("Error cleaning session %s: %s", session_id, e)
+            return False
+
     @staticmethod
     def normalize_path(file_path: str) -> str:
         base = "/home/user"

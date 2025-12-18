@@ -16,6 +16,7 @@ from app.models.db_models import (
     Message,
     MessageRole,
     MessageStreamStatus,
+    ModelProvider,
     User,
     UserSettings,
 )
@@ -29,6 +30,7 @@ from app.models.schemas import (
 )
 from app.models.types import ChatCompletionResult, MessageAttachmentDict
 from app.prompts.system_prompt import build_system_prompt_for_chat
+from app.services.ai_model import AIModelService
 from app.services.base import BaseDbService, SessionFactoryType
 from app.services.claude_agent import ClaudeAgentService
 from app.services.exceptions import ChatException, ErrorCode
@@ -431,6 +433,18 @@ class ChatService(BaseDbService[Chat]):
             attachments=attachments,
         )
 
+        # When switching from OpenRouter to Claude, we need to clean thinking blocks from the session.
+        # OpenRouter models (via anthropic-bridge) generate thinking blocks with empty signatures.
+        # Claude API validates signatures and rejects invalid ones with:
+        # "Invalid signature in thinking block"
+        # We strip these invalid thinking blocks while preserving the rest of the conversation context.
+        session_id = chat.session_id
+        if session_id and chat.sandbox_id:
+            if await self._needs_session_cleaning(chat.id, request.model_id):
+                await self.sandbox_service.clean_session_thinking_blocks(
+                    chat.sandbox_id, session_id
+                )
+
         assistant_message = await self._create_assistant_message(chat, request.model_id)
 
         system_prompt = build_system_prompt_for_chat(
@@ -449,7 +463,7 @@ class ChatService(BaseDbService[Chat]):
                 chat=chat,
                 permission_mode=request.permission_mode,
                 model_id=request.model_id,
-                session_id=chat.session_id,
+                session_id=session_id,
                 assistant_message_id=str(assistant_message.id),
                 thinking_mode=request.thinking_mode,
                 attachments=attachments,
@@ -596,3 +610,25 @@ class ChatService(BaseDbService[Chat]):
             pass
         except Exception as e:
             logger.warning("Failed to resume sandbox for chat %s: %s", chat_id, e)
+
+    async def _needs_session_cleaning(self, chat_id: UUID, new_model_id: str) -> bool:
+        ai_model_service = AIModelService(session_factory=self._session_factory)
+
+        new_provider = await ai_model_service.get_model_provider(new_model_id)
+        if new_provider != ModelProvider.ANTHROPIC:
+            return False
+
+        last_message = await self.message_service.get_latest_assistant_message(chat_id)
+        if not last_message or not last_message.model_id:
+            return False
+
+        prev_provider = await ai_model_service.get_model_provider(last_message.model_id)
+        if prev_provider == ModelProvider.OPENROUTER:
+            logger.info(
+                "Session cleaning needed for chat %s: switching from OpenRouter to %s",
+                chat_id,
+                new_provider,
+            )
+            return True
+
+        return False

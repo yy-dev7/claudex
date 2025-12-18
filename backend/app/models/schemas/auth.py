@@ -1,4 +1,3 @@
-from functools import cached_property
 from uuid import UUID
 
 from fastapi_users import schemas
@@ -11,8 +10,8 @@ class UserRead(schemas.BaseUser[UUID]):
     username: str
     daily_message_limit: int | None
 
-    @computed_field
-    @cached_property
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def email_verification_required(self) -> bool:
         return get_settings().REQUIRE_EMAIL_VERIFICATION
 
