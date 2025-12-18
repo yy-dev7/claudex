@@ -1,11 +1,4 @@
-import {
-  MessagesSquare,
-  Code,
-  SquareTerminal,
-  KeyRound,
-  Globe,
-  Smartphone,
-} from 'lucide-react';
+import { MessagesSquare, Code, SquareTerminal, KeyRound, Globe, Smartphone } from 'lucide-react';
 import { useUIStore } from '@/store';
 import { cn } from '@/utils/cn';
 import type { ViewType } from '@/types/ui.types';

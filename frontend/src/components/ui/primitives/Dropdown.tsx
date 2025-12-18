@@ -1,4 +1,4 @@
-import { memo, ReactNode, useState, useEffect, useRef, KeyboardEvent } from 'react';
+import { memo, ReactNode, useState, useEffect, KeyboardEvent } from 'react';
 import { ChevronDown, LucideIcon, Search, X } from 'lucide-react';
 import { useDropdown } from '@/hooks/useDropdown';
 import { Button, SelectItem } from '@/components/ui';
@@ -51,15 +51,12 @@ function DropdownInner<T>({
 }: DropdownProps<T>) {
   const { isOpen, dropdownRef, setIsOpen } = useDropdown();
   const [searchQuery, setSearchQuery] = useState('');
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setSearchQuery('');
-    } else if (searchable) {
-      setTimeout(() => searchInputRef.current?.focus(), 0);
     }
-  }, [isOpen, searchable]);
+  }, [isOpen]);
 
   const filterItems = (itemsToFilter: readonly T[]): T[] => {
     if (!searchQuery.trim()) return [...itemsToFilter];
@@ -156,12 +153,12 @@ function DropdownInner<T>({
               <div className="relative flex items-center">
                 <Search className="pointer-events-none absolute left-2 h-3 w-3 text-text-quaternary dark:text-text-dark-quaternary" />
                 <input
-                  ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={handleSearchKeyDown}
                   placeholder={searchPlaceholder}
+                  autoFocus
                   className="h-7 w-full rounded-md border border-border bg-surface-secondary py-1 pl-7 pr-7 text-xs text-text-primary placeholder:text-text-quaternary focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-border-dark dark:bg-surface-dark-secondary dark:text-text-dark-primary dark:placeholder:text-text-dark-quaternary dark:focus:ring-brand-400"
                 />
                 {searchQuery && (
