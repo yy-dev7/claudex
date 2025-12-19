@@ -9,6 +9,12 @@ Open-source general AI agent powered by Claude Agent SDK with sandboxed code exe
 [![React 19](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
 
+## Screenshots
+
+![Chat Interface](screenshots/chat-interface.png)
+
+![Agent Workflow](screenshots/agent-workflow.png)
+
 ## Features
 
 ### Core Chat
