@@ -1,0 +1,9 @@
+# Force LF line endings for shell scripts (required for Docker/Linux containers)
+*.sh text eol=lf
+
+# Dockerfiles
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
+
+# Other container-related files
+docker-compose*.yml text eol=lf
