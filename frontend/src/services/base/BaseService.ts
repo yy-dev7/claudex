@@ -116,7 +116,7 @@ export function handleServiceError(error: unknown): ServiceError {
     const derivedStatus = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
     const formattedMessage = formatErrorMessage(error.message);
 
-    return new ServiceError(formattedMessage, 'API_ERROR', error, derivedStatus);
+    return new ServiceError(formattedMessage, 'API_ERROR', error, status ?? derivedStatus);
   }
 
   return ServiceError.fromResponse(error);

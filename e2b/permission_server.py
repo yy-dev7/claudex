@@ -135,10 +135,21 @@ async def handle_call_tool(
 
                 # Return MCP response
                 if approved:
-                    if user_answers is not None:
+                    if user_answers is not None and tool_name == "AskUserQuestion":
+                        # Convert array answers to comma-separated strings (AskUserQuestion expects Record<string, string>)
+                        string_answers = {}
+                        for key, value in user_answers.items():
+                            string_answers[key] = ", ".join(value) if isinstance(value, list) else value
+                        # Pass answers in updatedInput for AskUserQuestion
                         response = {
                             "behavior": "allow",
-                            "updatedInput": {"answers": user_answers},
+                            "updatedInput": {**tool_input, "answers": string_answers},
+                        }
+                    elif user_answers is not None:
+                        response = {
+                            "behavior": "allow",
+                            "updatedInput": tool_input,
+                            "message": f"User provided answers: {json.dumps(user_answers)}",
                         }
                     else:
                         response = {"behavior": "allow", "updatedInput": tool_input}
