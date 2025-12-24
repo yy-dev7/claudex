@@ -374,7 +374,7 @@ async with ClaudeAgentService(...) as ai_service:
 
 ```mermaid
 graph LR
-    A[用户消息<br/>/skill:name] --> B[识别 Skill 调用]
+    A["用户消息<br/>/skill:name"] --> B[识别 Skill 调用]
     B --> C[加载 Skill 定义]
     C --> D[注入到系统提示]
     D --> E[Claude 执行 Skill]
@@ -386,7 +386,7 @@ Slash Commands 提供快捷操作：
 
 ```mermaid
 graph LR
-    A[/command args] --> B[CommandService]
+    A["/command args"] --> B[CommandService]
     B --> C[解析命令定义]
     C --> D[替换变量]
     D --> E[执行命令逻辑]
@@ -398,7 +398,7 @@ graph LR
 
 ```mermaid
 graph LR
-    A[@agent 任务] --> B[AgentService]
+    A["@agent 任务"] --> B[AgentService]
     B --> C[加载 Agent 配置]
     C --> D[构建专用提示]
     D --> E[启动 Agent 会话]
