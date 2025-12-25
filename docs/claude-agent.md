@@ -107,7 +107,95 @@ ClaudeAgentOptions(
 )
 ```
 
-### 3.3 权限模式详解
+### 3.3 Transport 接口与 E2BSandboxTransport
+
+#### 3.3.1 Transport 抽象接口
+
+`Transport` 是 Claude Agent SDK 提供的**抽象基类**，定义了与 Claude CLI 通信的标准协议：
+
+```python
+# Claude Agent SDK 定义的接口
+from claude_agent_sdk._internal.transport import Transport
+
+class Transport(ABC):
+    async def connect(self) -> None: ...      # 建立连接
+    async def close(self) -> None: ...        # 关闭连接
+    async def write(self, data: str) -> None: ... # 写入数据到 CLI stdin
+    def read_messages(self) -> AsyncIterator[dict]: ... # 读取 CLI stdout
+    async def end_input(self) -> None: ...    # 发送 EOF 信号
+    def is_ready(self) -> bool: ...           # 检查连接状态
+```
+
+#### 3.3.2 E2BSandboxTransport 实现
+
+`E2BSandboxTransport` 是**本项目自定义实现**的 Transport，用于适配 E2B 云沙箱环境：
+
+```python
+# services/e2b_transport.py
+from claude_agent_sdk._internal.transport import Transport
+
+class E2BSandboxTransport(Transport):
+    """将 Transport 接口适配到 E2B 沙箱环境"""
+
+    async def connect(self) -> None:
+        # 1. 连接 E2B 沙箱
+        self._sandbox = await AsyncSandbox.connect(sandbox_id, api_key)
+
+        # 2. 构建 Claude CLI 命令
+        command = self._build_command()
+
+        # 3. 在沙箱中启动 CLI 进程
+        self._command = await self._sandbox.commands.run(command, ...)
+
+    async def write(self, data: str) -> None:
+        # 向 CLI stdin 写入 JSON
+        await self._sandbox.commands.send_stdin(self._command.pid, data)
+
+    def read_messages(self) -> AsyncIterator[dict]:
+        # 从 stdout 读取并解析 JSON（去除 ANSI 转义码）
+        return self._parse_cli_output()
+```
+
+#### 3.3.3 架构设计意图
+
+```mermaid
+graph TB
+    subgraph "Claude Agent SDK 提供"
+        TRANSPORT[Transport<br/>抽象接口]
+    end
+
+    subgraph "本项目实现"
+        E2B_IMPL[E2BSandboxTransport<br/>E2B 云沙箱]
+    end
+
+    subgraph "可扩展的其他实现"
+        LOCAL[LocalTransport<br/>本地进程]
+        DOCKER[DockerTransport<br/>Docker 容器]
+        SSH[SSHTransport<br/>远程服务器]
+        FLY[FlyTransport<br/>Fly.io]
+    end
+
+    TRANSPORT -.->|继承实现| E2B_IMPL
+    TRANSPORT -.->|可扩展| LOCAL
+    TRANSPORT -.->|可扩展| DOCKER
+    TRANSPORT -.->|可扩展| SSH
+    TRANSPORT -.->|可扩展| FLY
+
+    style E2B_IMPL fill:#9f9
+```
+
+**设计优势**：
+
+| 层级 | 提供者 | 职责 |
+|------|--------|------|
+| **Transport 接口** | Claude Agent SDK | 定义通信协议规范 |
+| **E2BSandboxTransport** | 本项目 | 适配 E2B 沙箱环境 |
+
+- SDK 只定义"怎么通信"，不关心"在哪里运行 CLI"
+- 项目可以自由选择运行环境（E2B、Docker、本地等）
+- 切换沙箱提供商只需实现新的 Transport 类
+
+### 3.4 权限模式详解
 
 ```mermaid
 graph LR
