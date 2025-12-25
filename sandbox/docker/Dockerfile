@@ -34,10 +34,6 @@ RUN apt-get update && apt-get install -y \
 
 RUN curl -fsSL https://get.docker.com | sh
 
-RUN mv /usr/bin/docker /usr/bin/docker.real && \
-    printf '#!/bin/bash\nif ! pgrep -x dockerd > /dev/null; then\n    sudo nohup dockerd > /tmp/dockerd.log 2>&1 &\n    disown\n    for i in {1..30}; do\n        if docker.real info > /dev/null 2>&1; then break; fi\n        sleep 0.5\n    done\nfi\nexec docker.real "$@"\n' > /usr/bin/docker && \
-    chmod +x /usr/bin/docker
-
 RUN useradd -m -s /bin/bash -u 1000 user && \
     echo "user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
     usermod -aG docker user && \

@@ -77,10 +77,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 RUN curl -fsSL https://get.docker.com | sh && \
     (id -u user &>/dev/null && usermod -aG docker user || true) && \
     mkdir -p /etc/docker && \
-    echo '{"storage-driver": "vfs"}' > /etc/docker/daemon.json && \
-    mv /usr/bin/docker /usr/bin/docker.real && \
-    printf '#!/bin/bash\nif ! pgrep -x dockerd > /dev/null; then\n    sudo nohup dockerd > /tmp/dockerd.log 2>&1 &\n    disown\n    for i in {1..30}; do\n        if docker.real info > /dev/null 2>&1; then break; fi\n        sleep 0.5\n    done\nfi\nexec docker.real "$@"\n' > /usr/bin/docker && \
-    chmod +x /usr/bin/docker
+    echo '{"storage-driver": "vfs"}' > /etc/docker/daemon.json
 
 ENV PATH="/usr/local/bin:/usr/local/lib/nodejs/node-v20.19.0-linux-x64/bin:/usr/local/go/bin:/root/.cargo/bin:${PATH}"
 
