@@ -461,9 +461,219 @@ async def process_stream(self):
         await session.commit()
 ```
 
-## 7. 总结
+## 7. Celery Worker 获取沙箱结果机制
 
-### 7.1 架构总览
+### 7.1 核心问题
+
+Celery Worker 如何从 E2B 沙箱中获取 Claude CLI 的执行结果？
+
+**答案**：不是"等待最终结果"，而是**流式消费** + **实时发布**。
+
+### 7.2 整体流程
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant API as FastAPI
+    participant Celery as Celery Worker
+    participant Agent as ClaudeAgentService
+    participant Transport as E2BSandboxTransport
+    participant E2B as E2B Sandbox
+    participant CLI as Claude CLI
+    participant Redis as Redis Stream
+    participant FE as Frontend SSE
+
+    API->>Celery: 入队 process_chat task
+    Celery->>Celery: 创建 asyncio event loop
+
+    Celery->>Agent: get_ai_stream()
+    Agent->>Transport: 建立连接
+    Transport->>E2B: 连接沙箱
+    Transport->>CLI: 启动 Claude CLI
+
+    Note over Celery,CLI: 流式消费（非阻塞等待）
+
+    loop 异步迭代
+        CLI-->>Transport: stdout JSON 事件
+        Transport-->>Agent: 解析后的事件
+        Agent-->>Celery: yield StreamEvent
+        Celery->>Redis: XADD 发布事件
+        Redis-->>FE: SSE 推送
+    end
+
+    Celery->>Celery: 保存到 PostgreSQL
+```
+
+### 7.3 关键实现
+
+#### 7.3.1 Celery Task 入口
+
+```python
+# tasks/chat_processor.py
+
+@celery_app.task(bind=True)
+def process_chat(self, prompt, ...):
+    # Celery 是同步的，需要手动创建 event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        return loop.run_until_complete(
+            _initialize_and_process_chat(task=self, prompt=prompt, ...)
+        )
+    finally:
+        loop.close()
+```
+
+#### 7.3.2 获取异步流
+
+```python
+# 获取 AI 流（AsyncIterator）
+stream = ai_service.get_ai_stream(
+    prompt=prompt,
+    model_id=model_id,
+    ...
+)
+
+# 消费流
+outcome = await _drain_ai_stream(
+    stream=stream,
+    redis_client=redis_client,
+    ...
+)
+```
+
+#### 7.3.3 流式消费循环
+
+```python
+async def _process_stream_events(ctx: StreamContext) -> None:
+    stream_iter = ctx.stream.__aiter__()
+
+    # 启动取消监控任务（双任务模式）
+    revocation_task = asyncio.create_task(_monitor_revocation(ctx))
+
+    try:
+        while True:
+            # 等待下一个事件（来自 CLI stdout）
+            event = await stream_iter.__anext__()
+
+            # 收集事件
+            ctx.events.append(deepcopy(event))
+
+            # 实时发布到 Redis Stream
+            await _publish_stream_entry(
+                ctx.redis_client,
+                ctx.chat_id,
+                "content",
+                {"event": event}
+            )
+
+    finally:
+        revocation_task.cancel()
+```
+
+#### 7.3.4 Redis Stream 发布
+
+```python
+async def _publish_stream_entry(redis, chat_id, kind, payload):
+    await redis.xadd(
+        f"chat:{chat_id}:stream",     # Stream key
+        {
+            "kind": kind,              # "content" | "error" | "complete"
+            "payload": json.dumps(payload)
+        },
+        maxlen=10000,                  # 限制流长度，防止内存溢出
+        approximate=True,              # 允许略微超出以提升性能
+    )
+```
+
+### 7.4 事件来源链路
+
+```mermaid
+graph LR
+    subgraph "E2B 沙箱内部"
+        CLI[Claude CLI]
+        STDOUT[stdout stream-json]
+    end
+
+    subgraph "E2BSandboxTransport"
+        CALLBACK[on_stdout 回调]
+        QUEUE[asyncio.Queue]
+        PARSE[_parse_cli_output]
+    end
+
+    subgraph "Celery Worker"
+        AGENT[ClaudeAgentService]
+        DRAIN[_drain_ai_stream]
+        PUBLISH[Redis XADD]
+    end
+
+    subgraph "API Server"
+        XREAD[Redis XREAD]
+        SSE[SSE Endpoint]
+    end
+
+    CLI --> STDOUT
+    STDOUT --> CALLBACK
+    CALLBACK --> QUEUE
+    QUEUE --> PARSE
+    PARSE --> AGENT
+    AGENT --> DRAIN
+    DRAIN --> PUBLISH
+    PUBLISH --> XREAD
+    XREAD --> SSE
+```
+
+### 7.5 双任务模式（处理 + 监控）
+
+```mermaid
+graph TB
+    subgraph "Celery Worker 内部"
+        MAIN[主任务<br/>处理流事件]
+        MONITOR[监控任务<br/>检测取消信号]
+    end
+
+    subgraph "Redis"
+        STREAM[(chat:xxx:stream)]
+        REVOKED[(chat:xxx:revoked)]
+    end
+
+    MAIN -->|XADD| STREAM
+    MONITOR -->|GET| REVOKED
+
+    REVOKED -->|检测到取消| CANCEL[取消主任务]
+    CANCEL --> MAIN
+```
+
+**为什么需要双任务？**
+- 主任务可能阻塞在 `await stream_iter.__anext__()`
+- 用户取消请求时，需要立即响应
+- 监控任务轮询 Redis 取消标志，检测到后主动 cancel 主任务
+
+### 7.6 数据流转总结
+
+| 阶段 | 数据位置 | 格式 |
+|------|----------|------|
+| CLI 输出 | E2B Sandbox stdout | 换行分隔的 JSON |
+| Transport 解析 | asyncio.Queue | Python dict |
+| Agent 处理 | AsyncIterator | StreamEvent |
+| Worker 发布 | Redis Stream | JSON 字符串 |
+| API 推送 | SSE Response | `event: content\ndata: {...}` |
+| 最终保存 | PostgreSQL | JSON 数组（Message.content） |
+
+### 7.7 关键设计决策
+
+| 设计 | 原因 |
+|------|------|
+| **流式消费** | AI 生成可能需要几十秒，不能阻塞等待最终结果 |
+| **Redis Stream** | 解耦 Worker 和 API，支持 SSE 断线重连（Last-Event-ID） |
+| **asyncio 在 Celery 中** | Celery Worker 是同步的，需要手动管理 event loop |
+| **双任务模式** | 支持用户随时取消，无需等待下一个事件 |
+| **事件累积** | 每个事件都保存，最终写入数据库，支持消息重放 |
+
+## 8. 总结
+
+### 8.1 架构总览
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -503,7 +713,7 @@ async def process_stream(self):
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 7.2 关键结论
+### 8.2 关键结论
 
 1. **Backend Service** = 多用户 Web 应用层（持久化、认证、流式传输）
 2. **Claude Agent SDK** = 协议抽象层（类型安全、版本兼容）
