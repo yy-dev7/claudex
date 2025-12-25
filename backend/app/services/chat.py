@@ -577,6 +577,7 @@ class ChatService(BaseDbService[Chat]):
                 "title": chat.title,
                 "sandbox_id": chat.sandbox_id,
                 "session_id": chat.session_id,
+                "sandbox_provider": chat.sandbox_provider,
             },
             permission_mode=permission_mode,
             model_id=model_id,

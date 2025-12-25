@@ -187,7 +187,7 @@ class ClaudeAgentService:
         self.current_chat_id = chat_id
         self._total_cost_usd = 0.0
 
-        sandbox_provider = user_settings.sandbox_provider
+        sandbox_provider = chat.sandbox_provider or user_settings.sandbox_provider
 
         options = await self._build_claude_options(
             user=user,

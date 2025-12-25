@@ -104,6 +104,7 @@ def _hydrate_user_and_chat(
         title=chat_data["title"],
         sandbox_id=chat_data.get("sandbox_id"),
         session_id=chat_data.get("session_id"),
+        sandbox_provider=chat_data.get("sandbox_provider"),
     )
     return user, chat
 
