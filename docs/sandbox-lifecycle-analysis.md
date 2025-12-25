@@ -903,81 +903,198 @@ class ExternalCheckpointService:
 
 ## 9. Manus 架构对比分析
 
-### 9.1 核心架构差异
+> 参考来源：
+> - [Why Every Agent needs Open Source Cloud Sandboxes - Latent Space](https://www.latent.space/p/e2b)
+> - [How Manus Uses E2B - E2B Blog](https://e2b.dev/blog/how-manus-uses-e2b-to-provide-agents-with-virtual-computers)
+
+### 9.1 Manus 核心架构
+
+Manus 将 E2B 沙箱视为**完整的虚拟计算机**，而非简单的代码执行环境。
 
 ```mermaid
 graph TB
-    subgraph "Claudex 架构"
-        USER1[用户] --> BE1[Backend]
-        BE1 --> SDK1[Claude Agent SDK]
-        SDK1 -->|Transport| SB1[E2B Sandbox]
-        SB1 -->|内置| CLI1[Claude CLI]
-        CLI1 -->|API 调用| CLAUDE1[Claude API]
+    subgraph "Manus 服务器端"
+        USER[用户] --> SERVER[Manus Server]
+        SERVER --> ORCHESTRATOR[Agent Orchestrator]
 
-        style CLI1 fill:#fcc
-        style SB1 fill:#ffc
+        subgraph "多模型架构"
+            CLAUDE[Claude 3.5 Sonnet<br/>主推理引擎]
+            QWEN[Fine-tuned Qwen<br/>特定任务]
+        end
+
+        ORCHESTRATOR --> CLAUDE
+        ORCHESTRATOR --> QWEN
     end
 
-    subgraph "Manus 架构"
-        USER2[用户] --> BE2[Backend]
-        BE2 --> AI2[AI Model]
-        AI2 -->|Tool Calls| TOOL2[Tool Executor]
-        TOOL2 -->|执行命令| SB2[E2B Sandbox]
-
-        style AI2 fill:#9f9
-        style SB2 fill:#ffc
+    subgraph "E2B 沙箱 - 完整虚拟计算机"
+        VM[Ubuntu Linux VM]
+        BROWSER[Chromium 浏览器]
+        TERMINAL[Shell + sudo]
+        FS[文件系统]
+        PYTHON[Python 解释器]
+        NODEJS[Node.js 解释器]
+        WEBSERVER[可暴露 Web 服务器]
     end
+
+    ORCHESTRATOR -->|27 种工具调用| VM
+    VM --> BROWSER
+    VM --> TERMINAL
+    VM --> FS
+    VM --> PYTHON
+    VM --> NODEJS
+    VM --> WEBSERVER
+
+    style CLAUDE fill:#9f9
+    style VM fill:#ffc
 ```
 
-### 9.2 关键区别
-
-| 方面 | Claudex | Manus |
-|------|---------|-------|
-| **AI 运行位置** | 沙箱内 (Claude CLI) | 服务器端 |
-| **沙箱用途** | AI 运行环境 + 代码执行 | 纯代码执行环境 |
-| **Tool 执行** | Claude CLI 内部处理 | 服务器端 Tool Executor |
-| **API 调用** | 从沙箱发起 | 从服务器发起 |
-| **资源需求** | 高（需要运行 AI） | 低（只执行命令） |
-
-### 9.3 Manus 沙箱模型
+### 9.2 Manus Agent Loop（代理循环）
 
 ```mermaid
 sequenceDiagram
     participant User as 用户
     participant Server as Manus Server
-    participant AI as AI Model
-    participant Sandbox as E2B Sandbox
+    participant LLM as Claude/Qwen
+    participant Sandbox as E2B 虚拟计算机
 
     User->>Server: 发送任务
-    Server->>AI: 处理任务
+    Server->>Server: 初始化 Event Stream
 
-    loop AI 推理循环
-        AI->>AI: 思考下一步
-        AI->>Server: Tool Call (如 execute_bash)
-        Server->>Sandbox: 执行命令
+    loop Agent Loop（可能持续数十分钟）
+        Server->>LLM: 发送 Event Stream + 系统提示
+        LLM->>LLM: 1. Analyze 分析当前状态
+        LLM->>LLM: 2. Plan 规划下一步
+        LLM-->>Server: 3. 生成 Python 代码（CodeAct）
+
+        Note over Server,Sandbox: 每次迭代只执行一个动作
+
+        Server->>Sandbox: 4. Execute 执行代码
         Sandbox-->>Server: 执行结果
-        Server->>AI: 返回结果
+        Server->>Server: 5. Observe 追加到 Event Stream
     end
 
-    AI->>Server: 任务完成
-    Server->>User: 返回结果
+    Server->>User: 返回最终结果
 ```
 
-**Manus 不在沙箱中安装 Claude CLI**：
-- Manus 使用自己的 AI 模型
-- AI 推理在服务器端完成
-- 沙箱只是一个远程执行环境
-- 通过 Tool Calls 模式执行代码
+### 9.3 CodeAct 范式
 
-### 9.4 为什么 Claudex 选择在沙箱中运行 Claude CLI
+Manus 采用 **CodeAct 范式**：AI 生成可执行的 Python 代码作为动作，而非简单的工具调用。
+
+```python
+# 传统 Tool Call 方式
+{"tool": "execute_bash", "args": {"command": "ls -la"}}
+
+# CodeAct 方式 - Manus 生成的是完整的 Python 代码
+import os
+import subprocess
+
+# 可以组合多个操作、包含条件逻辑
+result = subprocess.run(["ls", "-la"], capture_output=True, text=True)
+files = result.stdout.split("\n")
+
+# 根据结果决定下一步
+if any("package.json" in f for f in files):
+    subprocess.run(["npm", "install"])
+else:
+    print("Not a Node.js project")
+```
+
+**优势**：
+- 单次动作可组合多个操作
+- 支持条件分支和循环
+- 可使用任意 Python 库
+- 研究表明成功率显著高于纯文本工具调用
+
+### 9.4 Manus 的 27 种工具
+
+| 类别 | 工具 | 说明 |
+|------|------|------|
+| **浏览器** | visit_url, save_image, scroll, click | Chromium 自动化 |
+| **终端** | execute_bash, run_python, run_node | Shell 命令执行 |
+| **文件系统** | create_file, edit_file, delete_file, read_file | 完整文件操作 |
+| **搜索** | web_search | 网络搜索 |
+| **消息** | send_message, ask_user | 用户交互 |
+| **数据源** | weather_api, finance_api, etc. | 预授权 API |
+
+### 9.5 Manus 与 Claudex 架构对比
+
+```mermaid
+graph TB
+    subgraph "Claudex 架构"
+        C_USER[用户] --> C_BE[Backend]
+        C_BE --> C_SDK[Claude Agent SDK]
+        C_SDK -->|Transport| C_SB[E2B Sandbox]
+        C_SB -->|内置运行| C_CLI[Claude CLI]
+        C_CLI -->|API 调用| C_API[Claude API]
+
+        style C_CLI fill:#fcc
+        style C_SB fill:#ffc
+    end
+
+    subgraph "Manus 架构"
+        M_USER[用户] --> M_SERVER[Manus Server]
+        M_SERVER --> M_ORCH[Orchestrator]
+        M_ORCH --> M_LLM[Claude/Qwen]
+        M_LLM -->|API 调用| M_API[Claude API]
+        M_ORCH -->|CodeAct| M_SB[E2B 虚拟计算机]
+
+        style M_LLM fill:#9f9
+        style M_SB fill:#ffc
+    end
+```
+
+| 方面 | Claudex | Manus |
+|------|---------|-------|
+| **AI 运行位置** | 沙箱内 (Claude CLI) | 服务器端（多模型编排） |
+| **沙箱定位** | AI 运行环境 + 代码执行 | 完整虚拟计算机 |
+| **动作模式** | CLI 内置工具 | CodeAct（Python 代码） |
+| **API 调用** | 从沙箱发起 | 从服务器发起 |
+| **模型选择** | 固定使用 Claude | 多模型动态调度 |
+| **会话时长** | 分钟级 | 可达数十分钟甚至小时 |
+| **沙箱保留** | 依赖 auto_pause | 付费用户 14 天持久化 |
+
+### 9.6 Manus 的状态管理
+
+```mermaid
+graph TB
+    subgraph "Event Stream（事件流）"
+        ES[按时间顺序记录]
+        ES --> E1[用户消息]
+        ES --> E2[AI 动作]
+        ES --> E3[执行结果]
+        ES --> E4[观察输出]
+    end
+
+    subgraph "File-Based Memory（文件记忆）"
+        FM[持久化到沙箱文件系统]
+        FM --> TODO[todo.md 任务跟踪]
+        FM --> NOTES[notes.md 研究笔记]
+        FM --> DATA[数据文件]
+    end
+
+    subgraph "Context Management"
+        CM[上下文管理]
+        CM --> TRUNC[策略性截断]
+        CM --> SUMM[自动摘要]
+        CM --> VEC[向量检索]
+    end
+```
+
+**Manus 的记忆机制**：
+1. **Event Stream**：所有交互的时间序列日志
+2. **文件记忆**：使用 `todo.md` 跟踪进度，持久化到沙箱
+3. **上下文管理**：智能截断和摘要，保持 Token 限制内
+
+### 9.7 为什么 Claudex 选择在沙箱中运行 Claude CLI
 
 ```mermaid
 graph TB
     subgraph "Claudex 设计理由"
-        R1[复用 Claude Code 能力]
-        R2[完整的 IDE 体验]
+        R1[复用 Claude Code 完整能力]
+        R2[内置 IDE 体验]
         R3[文件系统直接访问]
-        R4[保持 Claude Code CLI 一致性]
+        R4[保持 CLI 行为一致性]
+        R5[无需自己实现 50+ 工具]
     end
 
     subgraph "带来的问题"
@@ -985,155 +1102,204 @@ graph TB
         P2[需要同步资源到沙箱]
         P3[API Key 需要传入沙箱]
         P4[网络延迟叠加]
+        P5[无法多模型编排]
     end
 
     R1 --> P1
     R2 --> P2
     R3 --> P3
     R4 --> P4
+    R5 --> P5
 ```
 
-### 9.5 替代架构方案
+### 9.8 替代架构方案
 
-#### 方案 A：Manus 风格（服务器端 AI）
+#### 方案 A：Manus 风格（服务器端 AI + CodeAct）
 
 ```mermaid
 graph TB
     subgraph "服务器端"
         BE[Backend]
-        SDK[Claude Agent SDK]
-        EXECUTOR[Tool Executor]
+        ORCH[Agent Orchestrator]
+        LLM[Claude API]
+        EXEC[Code Executor]
     end
 
-    subgraph "沙箱"
-        SB[E2B Sandbox]
+    subgraph "E2B 虚拟计算机"
+        VM[Ubuntu VM]
+        PYTHON[Python Runtime]
+        BROWSER[Chromium]
         FS[文件系统]
-        PROC[进程管理]
     end
 
-    BE --> SDK
-    SDK -->|API| CLAUDE[Claude API]
-    CLAUDE -->|Tool Calls| SDK
-    SDK --> EXECUTOR
-    EXECUTOR -->|execute_bash| SB
-    EXECUTOR -->|write_file| SB
-    EXECUTOR -->|read_file| SB
-    SB --> FS
-    SB --> PROC
+    BE --> ORCH
+    ORCH --> LLM
+    LLM -->|生成 Python 代码| ORCH
+    ORCH --> EXEC
+    EXEC -->|执行代码| VM
+    VM --> PYTHON
+    VM --> BROWSER
+    VM --> FS
 ```
 
-**实现要点**：
+**CodeAct 实现要点**：
 ```python
-class ServerSideAgentService:
+class CodeActAgentService:
+    """Manus 风格的 CodeAct Agent"""
+
     def __init__(self, sandbox_service: SandboxService):
         self.sandbox = sandbox_service
-        self.tools = self._build_tools()
+        self.event_stream: list[dict] = []
 
-    def _build_tools(self) -> list[Tool]:
-        return [
-            Tool(
-                name="execute_bash",
-                description="Execute a bash command in the sandbox",
-                input_schema={...},
-                handler=self._execute_bash,
-            ),
-            Tool(
-                name="write_file",
-                description="Write content to a file",
-                input_schema={...},
-                handler=self._write_file,
-            ),
-            # ... 更多 tools
-        ]
-
-    async def _execute_bash(
-        self, sandbox_id: str, command: str
-    ) -> str:
-        return await self.sandbox.execute_command(sandbox_id, command)
-
-    async def process_message(
+    async def process_task(
         self,
         sandbox_id: str,
-        user_message: str,
+        user_task: str,
     ) -> AsyncIterator[StreamEvent]:
-        # 使用 Anthropic API 直接调用
+        self.event_stream.append({
+            "type": "user_message",
+            "content": user_task
+        })
+
         async with anthropic.AsyncClient() as client:
-            response = await client.messages.create(
-                model="claude-sonnet-4-20250514",
-                messages=[{"role": "user", "content": user_message}],
-                tools=self.tools,
-            )
-
-            # 处理 tool calls
-            while response.stop_reason == "tool_use":
-                tool_results = []
-                for block in response.content:
-                    if block.type == "tool_use":
-                        result = await self._execute_tool(
-                            sandbox_id, block.name, block.input
-                        )
-                        tool_results.append(result)
-
+            while True:
+                # 1. 发送 Event Stream 给 LLM
                 response = await client.messages.create(
                     model="claude-sonnet-4-20250514",
-                    messages=[...],  # 包含 tool results
-                    tools=self.tools,
+                    system=self._build_system_prompt(),
+                    messages=self._format_event_stream(),
                 )
 
-            yield from self._stream_response(response)
+                # 2. 检查是否完成
+                if self._is_task_complete(response):
+                    break
+
+                # 3. 提取生成的 Python 代码
+                code = self._extract_code(response)
+
+                # 4. 在沙箱中执行代码
+                result = await self.sandbox.execute_python(
+                    sandbox_id, code
+                )
+
+                # 5. 追加到 Event Stream
+                self.event_stream.append({
+                    "type": "action",
+                    "code": code,
+                })
+                self.event_stream.append({
+                    "type": "observation",
+                    "result": result,
+                })
+
+                yield StreamEvent(type="progress", data=result)
+
+    def _build_system_prompt(self) -> str:
+        return """
+        你是一个自主 AI Agent，运行在完整的 Ubuntu 虚拟计算机中。
+
+        ## 可用能力
+        - 执行任意 Python 代码
+        - 使用 Chromium 浏览器访问网页
+        - 执行 Shell 命令
+        - 读写文件系统
+
+        ## 规则
+        1. 每次只执行一个动作
+        2. 生成可执行的 Python 代码
+        3. 等待执行结果后再决定下一步
+        4. 使用 todo.md 跟踪任务进度
+        """
 ```
 
 **优势**：
-- ✅ 沙箱资源消耗低
-- ✅ 无需同步 Claude CLI 资源
+- ✅ 沙箱资源消耗低（无需运行 Claude CLI）
 - ✅ API Key 不进入沙箱
-- ✅ 更灵活的工具定制
+- ✅ 支持多模型编排
+- ✅ 可执行复杂的组合动作
+- ✅ 支持长时间运行任务（小时级）
 
 **劣势**：
-- ❌ 失去 Claude Code 内置能力
-- ❌ 需要自己实现所有 tools
-- ❌ 可能与 Claude Code 行为不一致
+- ❌ 失去 Claude Code 内置的 50+ 工具
+- ❌ 需要自己维护工具实现
+- ❌ 开发和调试成本高
 
-#### 方案 B：混合架构（推荐）
+#### 方案 B：保持现状 + 渐进优化（推荐）
+
+考虑到 Claudex 的定位是**复用 Claude Code 能力**，完全转向 Manus 风格可能不是最优选择。推荐渐进式优化：
 
 ```mermaid
 graph TB
-    subgraph "服务器端"
-        BE[Backend]
-        SDK[Claude Agent SDK]
-        TOOLS[自定义 Tools]
+    subgraph "阶段一：资源优化"
+        O1[E2B Template 预置资源]
+        O2[增量资源同步]
+        O3[外部 Checkpoint 存储]
     end
 
-    subgraph "沙箱"
-        SB[E2B Sandbox]
-        CLI[Claude CLI - 按需]
+    subgraph "阶段二：生命周期优化"
+        O4[沙箱池化]
+        O5[主动清理策略]
+        O6[14 天持久化]
     end
 
-    BE --> SDK
-    SDK -->|简单任务| TOOLS
-    TOOLS --> SB
+    subgraph "阶段三：架构演进"
+        O7[简单任务服务器端处理]
+        O8[复杂任务保持 CLI]
+    end
 
-    SDK -->|复杂任务| CLI
-    CLI --> SB
+    O1 --> O4
+    O2 --> O4
+    O3 --> O4
+    O4 --> O7
+    O5 --> O7
+    O6 --> O7
 ```
 
-**实现**：
+**实现路径**：
 ```python
+# 阶段一：立即可做
+class OptimizedSandboxService(SandboxService):
+    async def initialize_sandbox(self, ...):
+        # 1. 使用自定义 Template（预置 Claude CLI + 常用工具）
+        sandbox = await AsyncSandbox.create(
+            template="claudex-optimized",  # 自定义 Template
+            timeout=3600,
+            auto_pause=True,
+        )
+
+        # 2. 只同步用户自定义资源
+        if self._has_custom_resources(user_id):
+            await self._sync_user_resources_only(sandbox_id, user_id)
+
+# 阶段二：沙箱生命周期
+LIFECYCLE_CONFIG = {
+    "max_idle_before_pause": 5 * 60,      # 5 分钟空闲后暂停
+    "max_pause_duration": 14 * 24 * 3600, # 14 天持久化
+    "checkpoint_to_s3": True,              # 外部存储
+}
+
+# 阶段三：混合处理
 class HybridAgentService:
-    async def process_message(
-        self, sandbox_id: str, user_message: str, complexity: str
-    ):
-        if complexity == "simple":
-            # 简单任务：服务器端直接处理
-            return await self._process_with_server_tools(
-                sandbox_id, user_message
-            )
+    async def process_message(self, sandbox_id: str, message: str):
+        task_type = self._classify_task(message)
+
+        if task_type == "code_execution":
+            # 简单代码执行：服务器端 + CodeAct
+            return await self._execute_with_codeact(sandbox_id, message)
         else:
-            # 复杂任务：使用沙箱内的 Claude CLI
-            return await self._process_with_sandbox_cli(
-                sandbox_id, user_message
-            )
+            # 复杂任务：使用 Claude CLI
+            return await self._execute_with_cli(sandbox_id, message)
 ```
+
+### 9.9 Manus 的关键启示
+
+| 启示 | Manus 做法 | Claudex 可借鉴 |
+|------|-----------|---------------|
+| **沙箱定位** | 完整虚拟计算机 | 已实现（E2B + OpenVSCode） |
+| **会话时长** | 支持数十分钟到小时 | 可优化（增加超时、持久化） |
+| **状态持久化** | 14 天 + 文件记忆 | 需优化（外部 Checkpoint） |
+| **动作模式** | CodeAct（Python 代码） | 可渐进引入 |
+| **多模型** | Claude + Qwen 编排 | 当前单模型，可扩展 |
 
 ## 10. 优化建议优先级更新
 
