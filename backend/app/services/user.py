@@ -88,6 +88,7 @@ class UserService(BaseDbService[UserSettings]):
             "custom_env_vars",
             "custom_skills",
             "custom_slash_commands",
+            "custom_prompts",
         }
 
         for field, value in settings_update.items():

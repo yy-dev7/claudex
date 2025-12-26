@@ -10,6 +10,7 @@ from app.models.types import (
     CustomAgentDict,
     CustomEnvVarDict,
     CustomMcpDict,
+    CustomPromptDict,
     CustomSkillDict,
     CustomSlashCommandDict,
 )
@@ -85,6 +86,9 @@ class UserSettings(Base):
         JSON, nullable=True
     )
     custom_slash_commands: Mapped[list[CustomSlashCommandDict] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    custom_prompts: Mapped[list[CustomPromptDict] | None] = mapped_column(
         JSON, nullable=True
     )
     notification_sound_enabled: Mapped[bool] = mapped_column(

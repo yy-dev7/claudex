@@ -286,6 +286,7 @@ class TestChatService(ChatService):
         assistant_message_id,
         thinking_mode,
         attachments,
+        is_custom_prompt=False,
     ):
         import app.tasks.chat_processor as chat_processor_module
         from unittest.mock import MagicMock

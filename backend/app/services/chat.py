@@ -419,8 +419,11 @@ class ChatService(BaseDbService[Chat]):
         assistant_message = await self._create_assistant_message(chat, request.model_id)
 
         system_prompt = build_system_prompt_for_chat(
-            chat.sandbox_id or "", user_settings
+            chat.sandbox_id or "",
+            user_settings,
+            selected_prompt_name=request.selected_prompt_name,
         )
+        is_custom_prompt = bool(request.selected_prompt_name)
         custom_instructions = (
             user_settings.custom_instructions if user_settings else None
         )
@@ -438,6 +441,7 @@ class ChatService(BaseDbService[Chat]):
                 assistant_message_id=str(assistant_message.id),
                 thinking_mode=request.thinking_mode,
                 attachments=attachments,
+                is_custom_prompt=is_custom_prompt,
             )
 
             await self._store_active_task(chat_id, task.id)
@@ -561,6 +565,7 @@ class ChatService(BaseDbService[Chat]):
         assistant_message_id: str,
         thinking_mode: str | None,
         attachments: list[MessageAttachmentDict] | None,
+        is_custom_prompt: bool = False,
     ) -> "AsyncResult[object]":
         return process_chat.delay(
             prompt=prompt,
@@ -585,6 +590,7 @@ class ChatService(BaseDbService[Chat]):
             assistant_message_id=assistant_message_id,
             thinking_mode=thinking_mode,
             attachments=attachments,
+            is_custom_prompt=is_custom_prompt,
         )
 
     async def _store_active_task(self, chat_id: UUID, task_id: str) -> None:

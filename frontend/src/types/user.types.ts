@@ -69,6 +69,11 @@ export interface CustomCommand {
     | null;
 }
 
+export interface CustomPrompt {
+  name: string;
+  content: string;
+}
+
 export type SandboxProvider = 'e2b' | 'docker';
 
 export interface UserSettings {
@@ -85,6 +90,7 @@ export interface UserSettings {
   custom_env_vars: CustomEnvVar[] | null;
   custom_skills: CustomSkill[] | null;
   custom_slash_commands: CustomCommand[] | null;
+  custom_prompts: CustomPrompt[] | null;
   notification_sound_enabled?: boolean;
   sandbox_provider: SandboxProvider;
   created_at: string;

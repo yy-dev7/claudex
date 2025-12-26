@@ -50,6 +50,11 @@ class CustomSlashCommandDict(BaseResourceDict, total=False):
     )
 
 
+class CustomPromptDict(TypedDict, total=False):
+    name: str
+    content: str
+
+
 class MessageAttachmentDict(TypedDict, total=False):
     file_url: str
     file_path: str | None

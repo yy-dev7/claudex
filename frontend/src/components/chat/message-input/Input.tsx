@@ -50,7 +50,7 @@ export const Input = memo(function Input({
   showAttachedFilesPreview = true,
   contextUsage,
 }: InputProps) {
-  const { fileStructure, customAgents, customSlashCommands } = useChatContext();
+  const { fileStructure, customAgents, customSlashCommands, customPrompts } = useChatContext();
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showPreview, setShowPreview] = useState(true);
@@ -154,6 +154,7 @@ export const Input = memo(function Input({
   const {
     filteredFiles,
     filteredAgents,
+    filteredPrompts,
     highlightedIndex: highlightedMentionIndex,
     selectItem: selectMention,
     handleKeyDown: handleMentionKeyDown,
@@ -163,6 +164,7 @@ export const Input = memo(function Input({
     cursorPosition: cursorPosition,
     fileStructure,
     customAgents,
+    customPrompts,
     onSelect: handleMentionSelect,
   });
 
@@ -279,6 +281,7 @@ export const Input = memo(function Input({
             onSlashSelect={selectSlashCommand}
             mentionFiles={filteredFiles}
             mentionAgents={filteredAgents}
+            mentionPrompts={filteredPrompts}
             highlightedMentionIndex={highlightedMentionIndex}
             onMentionSelect={selectMention}
           />
@@ -333,7 +336,7 @@ export const Input = memo(function Input({
       {showAttachmentTip && (
         <div className="mt-1 animate-fade-in text-center text-2xs text-text-quaternary dark:text-text-dark-tertiary">
           <span className="font-medium">Tip:</span> Drag and drop images, pdfs and xlsx files into
-          the input area, type `/` for slash commands, or `@` to mention files and agents
+          the input area, type `/` for slash commands, or `@` to mention files, agents, and prompts
         </div>
       )}
     </form>

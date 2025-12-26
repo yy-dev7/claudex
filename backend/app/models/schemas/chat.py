@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     attached_files: list[UploadFile] | None = None
     permission_mode: Literal["plan", "ask", "auto"] = "auto"
     thinking_mode: str | None = Field(None, max_length=50)
+    selected_prompt_name: str | None = Field(None, max_length=100)
 
     class Config:
         arbitrary_types_allowed = True

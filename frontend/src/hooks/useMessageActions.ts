@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { logger } from '@/utils/logger';
 import { parseEventLog } from '@/utils/stream';
 import { createAttachmentsFromFiles } from '@/utils/message';
+import { extractPromptMention } from '@/utils/mentionParser';
 import { MAX_MESSAGE_SIZE_BYTES } from '@/config/constants';
 import type { ChatRequest, Message, AssistantStreamEvent, LineReview, StreamState } from '@/types';
 
@@ -70,13 +71,16 @@ export function useMessageActions({
       setWasAborted(false);
 
       try {
+        const { promptName, cleanedMessage } = extractPromptMention(normalizedPrompt);
+
         const request: ChatRequest = {
-          prompt: normalizedPrompt,
+          prompt: cleanedMessage || normalizedPrompt,
           model_id: selectedModelId,
           ...(chatIdOverride && { chat_id: chatIdOverride }),
           attached_files: filesToSend && filesToSend.length > 0 ? filesToSend : undefined,
           permission_mode: permissionMode,
           thinking_mode: thinkingMode || undefined,
+          ...(promptName && { selected_prompt_name: promptName }),
         };
 
         const messageId = await startStream(request);

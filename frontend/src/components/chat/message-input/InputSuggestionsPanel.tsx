@@ -10,6 +10,7 @@ interface InputSuggestionsPanelProps {
   onSlashSelect: (command: SlashCommand) => void;
   mentionFiles: MentionItem[];
   mentionAgents: MentionItem[];
+  mentionPrompts: MentionItem[];
   highlightedMentionIndex: number;
   onMentionSelect: (item: MentionItem) => void;
 }
@@ -21,6 +22,7 @@ export const InputSuggestionsPanel = memo(function InputSuggestionsPanel({
   onSlashSelect,
   mentionFiles,
   mentionAgents,
+  mentionPrompts,
   highlightedMentionIndex,
   onMentionSelect,
 }: InputSuggestionsPanelProps) {
@@ -29,6 +31,7 @@ export const InputSuggestionsPanel = memo(function InputSuggestionsPanel({
       <MentionSuggestionsPanel
         files={mentionFiles}
         agents={mentionAgents}
+        prompts={mentionPrompts}
         highlightedIndex={highlightedMentionIndex}
         onSelect={onMentionSelect}
       />

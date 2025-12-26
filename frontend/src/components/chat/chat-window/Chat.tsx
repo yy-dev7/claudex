@@ -8,7 +8,13 @@ import { LoadingIndicator } from './LoadingIndicator';
 import { ScrollButton } from './ScrollButton';
 import { ErrorMessage } from './ErrorMessage';
 import { Spinner } from '@/components/ui';
-import type { Message as MessageType, FileStructure, CustomAgent, CustomCommand } from '@/types';
+import type {
+  Message as MessageType,
+  FileStructure,
+  CustomAgent,
+  CustomCommand,
+  CustomPrompt,
+} from '@/types';
 import { useStreamStore } from '@/store';
 import { ChatProvider } from '@/contexts/ChatContext';
 
@@ -44,6 +50,7 @@ export interface ChatProps {
   fileStructure?: FileStructure[];
   customAgents?: CustomAgent[];
   customSlashCommands?: CustomCommand[];
+  customPrompts?: CustomPrompt[];
 }
 
 export const Chat = memo(function Chat({
@@ -73,6 +80,7 @@ export const Chat = memo(function Chat({
   fileStructure = [],
   customAgents = [],
   customSlashCommands = [],
+  customPrompts = [],
 }: ChatProps) {
   const activeStreams = useStreamStore((state) => state.activeStreams);
   const streamingMessageIds = useMemo(() => {
@@ -177,6 +185,7 @@ export const Chat = memo(function Chat({
       fileStructure={fileStructure}
       customAgents={customAgents}
       customSlashCommands={customSlashCommands}
+      customPrompts={customPrompts}
     >
       <div className="relative flex min-w-0 flex-1 flex-col">
         <div

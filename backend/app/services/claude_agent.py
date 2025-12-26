@@ -177,6 +177,7 @@ class ClaudeAgentService:
         session_callback: Callable[[str], None] | None = None,
         thinking_mode: str | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        is_custom_prompt: bool = False,
     ) -> AsyncIterator[StreamEvent]:
         chat_id = str(chat.id)
         user_settings = await UserService(
@@ -199,6 +200,7 @@ class ClaudeAgentService:
             thinking_mode=thinking_mode,
             chat_id=chat_id,
             sandbox_provider=sandbox_provider,
+            is_custom_prompt=is_custom_prompt,
         )
 
         user_prompt = self.prepare_user_prompt(prompt, custom_instructions, attachments)
@@ -501,6 +503,7 @@ class ClaudeAgentService:
         thinking_mode: str | None,
         chat_id: str,
         sandbox_provider: str = "docker",
+        is_custom_prompt: bool = False,
     ) -> ClaudeAgentOptions:
         env, provider = await self._build_auth_env(model_id, user_settings)
 
@@ -531,12 +534,18 @@ class ClaudeAgentService:
             permission_mode, "bypassPermissions"
         )
 
-        options = ClaudeAgentOptions(
-            system_prompt={
+        system_prompt_config: str | dict[str, str]
+        if is_custom_prompt:
+            system_prompt_config = system_prompt
+        else:
+            system_prompt_config = {
                 "type": "preset",
                 "preset": "claude_code",
                 "append": system_prompt,
-            },
+            }
+
+        options = ClaudeAgentOptions(
+            system_prompt=system_prompt_config,
             permission_mode=sdk_permission_mode,
             model=model_id,
             disallowed_tools=disallowed_tools,

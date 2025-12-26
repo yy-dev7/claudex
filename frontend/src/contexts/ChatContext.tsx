@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import type { FileStructure, CustomAgent, CustomCommand } from '@/types';
+import type { FileStructure, CustomAgent, CustomCommand, CustomPrompt } from '@/types';
 import { ChatContext } from './ChatContextDefinition';
 
 interface ChatProviderProps {
@@ -8,6 +8,7 @@ interface ChatProviderProps {
   fileStructure?: FileStructure[];
   customAgents?: CustomAgent[];
   customSlashCommands?: CustomCommand[];
+  customPrompts?: CustomPrompt[];
   children: ReactNode;
 }
 
@@ -17,11 +18,12 @@ export function ChatProvider({
   fileStructure = [],
   customAgents = [],
   customSlashCommands = [],
+  customPrompts = [],
   children,
 }: ChatProviderProps) {
   return (
     <ChatContext.Provider
-      value={{ chatId, sandboxId, fileStructure, customAgents, customSlashCommands }}
+      value={{ chatId, sandboxId, fileStructure, customAgents, customSlashCommands, customPrompts }}
     >
       {children}
     </ChatContext.Provider>

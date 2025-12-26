@@ -31,7 +31,9 @@ import { TaskDialog } from '@/components/settings/dialogs/TaskDialog';
 import { SkillsSettingsTab } from '@/components/settings/tabs/SkillsSettingsTab';
 import { CommandsSettingsTab } from '@/components/settings/tabs/CommandsSettingsTab';
 import { CommandEditDialog } from '@/components/settings/dialogs/CommandEditDialog';
-import type { ApiFieldKey } from '@/types';
+import { PromptsSettingsTab } from '@/components/settings/tabs/PromptsSettingsTab';
+import { PromptEditDialog } from '@/components/settings/dialogs/PromptEditDialog';
+import type { ApiFieldKey, CustomPrompt } from '@/types';
 import { useModelsQuery } from '@/hooks/queries';
 import { useCrudForm } from '@/hooks/useCrudForm';
 import { useTaskManagement } from '@/hooks/useTaskManagement';
@@ -53,6 +55,7 @@ type TabKey =
   | 'agents'
   | 'skills'
   | 'commands'
+  | 'prompts'
   | 'env_vars'
   | 'instructions'
   | 'tasks';
@@ -74,6 +77,7 @@ const createFallbackSettings = (): UserSettings => ({
   custom_env_vars: null,
   custom_skills: null,
   custom_slash_commands: null,
+  custom_prompts: null,
   notification_sound_enabled: true,
   sandbox_provider: 'docker',
   created_at: new Date().toISOString(),
@@ -92,6 +96,7 @@ const TAB_FIELDS: Record<TabKey, (keyof UserSettings)[]> = {
   agents: ['custom_agents'],
   skills: ['custom_skills'],
   commands: ['custom_slash_commands'],
+  prompts: ['custom_prompts'],
   env_vars: ['custom_env_vars'],
   instructions: ['custom_instructions'],
   tasks: [],
@@ -117,6 +122,7 @@ const SettingsPage: React.FC = () => {
     { id: 'agents', label: 'Agents' },
     { id: 'skills', label: 'Skills' },
     { id: 'commands', label: 'Commands' },
+    { id: 'prompts', label: 'Prompts' },
     { id: 'env_vars', label: 'Environment Variables' },
     { id: 'instructions', label: 'Instructions' },
     { id: 'tasks', label: 'Tasks' },
@@ -178,6 +184,7 @@ const SettingsPage: React.FC = () => {
         'custom_env_vars',
         'custom_skills',
         'custom_slash_commands',
+        'custom_prompts',
         'notification_sound_enabled',
         'sandbox_provider',
       ];
@@ -251,6 +258,20 @@ const SettingsPage: React.FC = () => {
       validateEnvVarForm(form, editingIndex, localSettings.custom_env_vars || []),
     getArrayKey: 'custom_env_vars',
     itemName: 'environment variable',
+  });
+
+  const promptCrud = useCrudForm<CustomPrompt>(localSettings, persistSettings, {
+    createDefault: (): CustomPrompt => ({ name: '', content: '' }),
+    validateForm: (form, editingIndex) => {
+      if (!form.name.trim()) return 'Name is required';
+      if (!form.content.trim()) return 'Content is required';
+      const prompts = localSettings.custom_prompts || [];
+      const duplicate = prompts.some((p, i) => p.name === form.name.trim() && i !== editingIndex);
+      if (duplicate) return 'A prompt with this name already exists';
+      return null;
+    },
+    getArrayKey: 'custom_prompts',
+    itemName: 'prompt',
   });
 
   const skillManagement = useFileResourceManagement(
@@ -558,6 +579,17 @@ const SettingsPage: React.FC = () => {
                 </div>
               )}
 
+              {activeTab === 'prompts' && (
+                <div role="tabpanel" id="prompts-panel" aria-labelledby="prompts-tab">
+                  <PromptsSettingsTab
+                    prompts={localSettings.custom_prompts ?? null}
+                    onAddPrompt={promptCrud.handleAdd}
+                    onEditPrompt={promptCrud.handleEdit}
+                    onDeletePrompt={promptCrud.handleDelete}
+                  />
+                </div>
+              )}
+
               {activeTab === 'env_vars' && (
                 <div role="tabpanel" id="env_vars-panel" aria-labelledby="env_vars-tab">
                   <EnvVarsSettingsTab
@@ -642,6 +674,16 @@ const SettingsPage: React.FC = () => {
         onClose={envVarCrud.handleDialogClose}
         onSubmit={envVarCrud.handleSave}
         onEnvVarChange={envVarCrud.handleFormChange}
+      />
+
+      <PromptEditDialog
+        isOpen={promptCrud.isDialogOpen}
+        isEditing={promptCrud.editingIndex !== null}
+        prompt={promptCrud.form}
+        error={promptCrud.formError}
+        onClose={promptCrud.handleDialogClose}
+        onSubmit={promptCrud.handleSave}
+        onPromptChange={promptCrud.handleFormChange}
       />
 
       <TaskDialog

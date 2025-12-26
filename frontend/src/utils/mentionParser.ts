@@ -12,6 +12,25 @@ const INACTIVE_RESULT: MentionParseResult = {
   mentionEndPos: -1,
 } as const;
 
+export interface ExtractedPromptMention {
+  promptName: string | null;
+  cleanedMessage: string;
+}
+
+export const extractPromptMention = (message: string): ExtractedPromptMention => {
+  const promptMentionRegex = /@prompt:([^\s]+)/g;
+  const match = promptMentionRegex.exec(message);
+
+  if (!match) {
+    return { promptName: null, cleanedMessage: message };
+  }
+
+  const promptName = match[1];
+  const cleanedMessage = message.replace(match[0], '').trim();
+
+  return { promptName, cleanedMessage };
+};
+
 export const parseMentionQuery = (message: string, cursorPosition: number): MentionParseResult => {
   const textBeforeCursor = message.slice(0, cursorPosition);
   const lastAtIndex = textBeforeCursor.lastIndexOf('@');

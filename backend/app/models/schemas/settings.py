@@ -69,6 +69,11 @@ class CustomSlashCommand(BaseModel):
     ) = Field(None, description="Model override")
 
 
+class CustomPrompt(BaseModel):
+    name: str = Field(..., description="Unique name for the prompt")
+    content: str = Field(..., description="The system prompt content")
+
+
 class UserSettingsBase(BaseModel):
     github_personal_access_token: str | None = None
     e2b_api_key: str | None = None
@@ -81,6 +86,7 @@ class UserSettingsBase(BaseModel):
     custom_env_vars: list[CustomEnvVar] | None = None
     custom_skills: list[CustomSkill] | None = None
     custom_slash_commands: list[CustomSlashCommand] | None = None
+    custom_prompts: list[CustomPrompt] | None = None
     notification_sound_enabled: bool = True
     sandbox_provider: Literal["e2b", "docker"] = "docker"
 
@@ -90,6 +96,7 @@ class UserSettingsBase(BaseModel):
         "custom_env_vars",
         "custom_skills",
         "custom_slash_commands",
+        "custom_prompts",
         mode="before",
     )
     @classmethod

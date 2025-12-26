@@ -483,6 +483,7 @@ async def process_chat_stream(  # type: ignore[return]
     assistant_message_id: str | None = None,
     thinking_mode: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    is_custom_prompt: bool = False,
 ) -> str:
     user, chat = _hydrate_user_and_chat(user_data, chat_data)
 
@@ -517,6 +518,7 @@ async def process_chat_stream(  # type: ignore[return]
                     session_callback=session_callback,
                     thinking_mode=thinking_mode,
                     attachments=attachments,
+                    is_custom_prompt=is_custom_prompt,
                 )
 
                 try:
@@ -563,6 +565,7 @@ async def _initialize_and_process_chat(
     assistant_message_id: str | None,
     thinking_mode: str | None,
     attachments: list[dict[str, Any]] | None,
+    is_custom_prompt: bool = False,
 ) -> str:
     async with get_celery_session() as (SessionFactory, engine):
         async with SessionFactory() as db:
@@ -601,6 +604,7 @@ async def _initialize_and_process_chat(
                 thinking_mode=thinking_mode,
                 attachments=attachments,
                 sandbox_service=sandbox_service,
+                is_custom_prompt=is_custom_prompt,
             )
         finally:
             await sandbox_service.cleanup()
@@ -620,6 +624,7 @@ def process_chat(
     assistant_message_id: str | None = None,
     thinking_mode: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    is_custom_prompt: bool = False,
 ) -> str:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -639,6 +644,7 @@ def process_chat(
                 assistant_message_id=assistant_message_id,
                 thinking_mode=thinking_mode,
                 attachments=attachments,
+                is_custom_prompt=is_custom_prompt,
             )
         )
     finally:

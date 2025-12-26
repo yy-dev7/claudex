@@ -5,7 +5,7 @@ export type ToolComponent = React.FC<{ tool: ToolAggregate; chatId?: string }>;
 
 export type Theme = 'light' | 'dark';
 
-type MentionType = 'file' | 'agent';
+type MentionType = 'file' | 'agent' | 'prompt';
 
 export interface MentionItem {
   type: MentionType;
