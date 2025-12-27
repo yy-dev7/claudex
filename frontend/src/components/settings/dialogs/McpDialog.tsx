@@ -2,6 +2,13 @@ import type { CustomMcp } from '@/types';
 import { Button, Input, Label, Textarea, Switch } from '@/components/ui';
 import { Plus, X } from 'lucide-react';
 import { BaseModal } from '@/components/ui/shared/BaseModal';
+import { useState, useEffect, useRef } from 'react';
+
+interface EnvVarEntry {
+  id: string;
+  key: string;
+  value: string;
+}
 
 interface McpDialogProps {
   isOpen: boolean;
@@ -22,30 +29,60 @@ export const McpDialog: React.FC<McpDialogProps> = ({
   onSubmit,
   onMcpChange,
 }) => {
-  const addEnvVar = () => {
-    const envVars = mcp.env_vars || {};
-    envVars[`KEY_${Object.keys(envVars).length + 1}`] = '';
-    onMcpChange('env_vars', { ...envVars });
+  const [envVarEntries, setEnvVarEntries] = useState<EnvVarEntry[]>([]);
+  const idCounterRef = useRef(0);
+
+  const generateId = () => {
+    idCounterRef.current += 1;
+    return `entry-${idCounterRef.current}`;
   };
 
-  const updateEnvVar = (oldKey: string, newKey: string, value: string) => {
-    const envVars = { ...(mcp.env_vars || {}) };
-    if (oldKey !== newKey && oldKey in envVars) {
-      delete envVars[oldKey];
-    }
-    envVars[newKey] = value;
-    onMcpChange('env_vars', envVars);
-  };
+  useEffect(() => {
+    if (!isOpen) return;
+    idCounterRef.current = 0;
+    const entries = Object.entries(mcp.env_vars || {}).map(([key, value]) => ({
+      id: generateId(),
+      key,
+      value,
+    }));
+    setEnvVarEntries(entries);
+    // We intentionally omit mcp.env_vars from deps - we only want to initialize
+    // when dialog opens, not when parent state updates (which we trigger ourselves)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
-  const removeEnvVar = (key: string) => {
-    const envVars = { ...(mcp.env_vars || {}) };
-    delete envVars[key];
+  const syncEnvVarsToParent = (entries: EnvVarEntry[]) => {
+    const envVars: Record<string, string> = {};
+    entries.forEach((entry) => {
+      if (entry.key) {
+        envVars[entry.key] = entry.value;
+      }
+    });
     onMcpChange('env_vars', Object.keys(envVars).length > 0 ? envVars : undefined);
   };
 
+  const addEnvVar = () => {
+    const newEntries = [...envVarEntries, { id: generateId(), key: '', value: '' }];
+    setEnvVarEntries(newEntries);
+    syncEnvVarsToParent(newEntries);
+  };
+
+  const updateEnvVar = (id: string, key: string, value: string) => {
+    const newEntries = envVarEntries.map((entry) =>
+      entry.id === id ? { ...entry, key, value } : entry,
+    );
+    setEnvVarEntries(newEntries);
+    syncEnvVarsToParent(newEntries);
+  };
+
+  const removeEnvVar = (id: string) => {
+    const newEntries = envVarEntries.filter((entry) => entry.id !== id);
+    setEnvVarEntries(newEntries);
+    syncEnvVarsToParent(newEntries);
+  };
+
   const addArg = () => {
-    const args = mcp.args || [];
-    onMcpChange('args', [...args, '']);
+    onMcpChange('args', [...(mcp.args || []), '']);
   };
 
   const updateArg = (index: number, value: string) => {
@@ -188,23 +225,23 @@ export const McpDialog: React.FC<McpDialogProps> = ({
               </Button>
             </div>
             <div className="space-y-2">
-              {Object.entries(mcp.env_vars || {}).map(([key, value]) => (
-                <div key={key} className="flex gap-2">
+              {envVarEntries.map((entry) => (
+                <div key={entry.id} className="flex gap-2">
                   <Input
-                    value={key}
-                    onChange={(e) => updateEnvVar(key, e.target.value, value)}
+                    value={entry.key}
+                    onChange={(e) => updateEnvVar(entry.id, e.target.value, entry.value)}
                     placeholder="KEY"
                     className="flex-1 font-mono text-xs"
                   />
                   <Input
-                    value={value}
-                    onChange={(e) => updateEnvVar(key, key, e.target.value)}
+                    value={entry.value}
+                    onChange={(e) => updateEnvVar(entry.id, entry.key, e.target.value)}
                     placeholder="value"
                     className="flex-1 font-mono text-xs"
                   />
                   <Button
                     type="button"
-                    onClick={() => removeEnvVar(key)}
+                    onClick={() => removeEnvVar(entry.id)}
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 flex-shrink-0"
@@ -213,7 +250,7 @@ export const McpDialog: React.FC<McpDialogProps> = ({
                   </Button>
                 </div>
               ))}
-              {(!mcp.env_vars || Object.keys(mcp.env_vars).length === 0) && (
+              {envVarEntries.length === 0 && (
                 <p className="text-xs italic text-text-tertiary dark:text-text-dark-tertiary">
                   No environment variables configured
                 </p>
