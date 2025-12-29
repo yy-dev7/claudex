@@ -1301,82 +1301,178 @@ class HybridAgentService:
 | **动作模式** | CodeAct（Python 代码） | 可渐进引入 |
 | **多模型** | Claude + Qwen 编排 | 当前单模型，可扩展 |
 
-### 9.10 为什么沙箱运行的是 CLI 而不是 Claude Agent SDK？
+### 9.10 Claude Agent SDK 与 CLI 的关系
 
-这是一个核心架构问题。理解这一点需要先明确两者的本质区别：
+#### 9.10.1 SDK 是 CLI 的上层封装
 
 ```mermaid
 graph TB
-    subgraph "Claude CLI（大脑）"
-        CLI[Claude CLI 二进制]
+    subgraph "应用层"
+        APP[Backend Python 代码]
+    end
+
+    subgraph "Claude Agent SDK（上层封装）"
+        SDK[SDK Python 库]
+        SDK --> SESSION[Session 管理]
+        SDK --> TRANSPORT[Transport 抽象]
+        SDK --> EVENTS[事件流解析]
+        SDK --> API[高级 API]
+    end
+
+    subgraph "Claude CLI（底层引擎）"
+        CLI[CLI 二进制]
         CLI --> BRAIN[AI 推理引擎]
         CLI --> TOOLS[50+ 内置工具]
-        CLI --> CONTEXT[会话上下文管理]
-        CLI --> LOOP[Tool 执行循环]
+        CLI --> CONTEXT[会话上下文]
+        CLI --> LOOP[Agentic Loop]
     end
 
-    subgraph "Claude Agent SDK（通信管道）"
-        SDK[Claude Agent SDK]
-        SDK --> TRANSPORT[Transport 接口]
-        SDK --> STREAM[事件流解析]
-        SDK --> PROTOCOL[协议封装]
-    end
+    APP -->|使用| SDK
+    SDK -->|控制| CLI
+    CLI -->|调用| CLAUDE[Claude API]
 
-    CLI <-->|stdin/stdout| SDK
+    style SDK fill:#9f9
+    style CLI fill:#ffc
 ```
 
-#### 9.10.1 核心区别
+**层级关系**：
+```
+Backend 代码 (Python)
+    ↓ 使用
+Claude Agent SDK (Python 库) ← 上层封装，提供友好 API
+    ↓ 通过 Transport 控制
+Claude CLI (二进制)          ← 底层引擎，执行实际工作
+    ↓ 调用
+Claude API
+```
 
-| 组件 | 本质 | 包含 AI 推理？ | 包含工具实现？ |
-|------|------|---------------|---------------|
-| **Claude CLI** | 完整的 AI Agent 二进制 | ✅ 是 | ✅ 50+ 工具 |
-| **Claude Agent SDK** | 通信协议封装 | ❌ 否 | ❌ 否 |
+#### 9.10.2 SDK 提供的能力
 
 ```python
-# Claude Agent SDK 只是一个通信层
-class Transport(ABC):
-    """SDK 提供的抽象接口"""
-    async def write(self, data: str) -> None: ...      # 发送命令
-    def read_messages(self) -> AsyncIterator[dict]: ... # 接收事件
+# SDK 封装了 CLI 的复杂性，提供简洁的 Python API
+from claude_code_sdk import ClaudeCodeSession
 
-# 它需要有东西来"对话"
-# 在 Claudex 中，对话的对象是 Claude CLI
+async def use_claude_code():
+    # SDK 创建会话，内部管理 CLI 进程
+    async with ClaudeCodeSession() as session:
+        # SDK 提供高级 API
+        response = await session.send_message("帮我分析这段代码")
+
+        # SDK 处理事件流
+        async for event in response:
+            if event.type == "text":
+                print(event.content)
+            elif event.type == "tool_use":
+                print(f"正在使用工具: {event.tool_name}")
 ```
 
-#### 9.10.2 为什么必须运行 CLI？
+**SDK 封装的内容**：
+- CLI 进程的启动和管理
+- stdin/stdout 通信协议
+- 事件流的解析和类型化
+- 会话状态管理
+- 错误处理和重试
+
+#### 9.10.3 为什么 CLI 必须在沙箱内运行？
 
 ```mermaid
 sequenceDiagram
-    participant Backend as Backend
+    participant Backend as Backend (服务器)
     participant SDK as Claude Agent SDK
+    participant Transport as E2B Transport
     participant CLI as Claude CLI (沙箱内)
+    participant FS as 沙箱文件系统
     participant Claude as Claude API
 
-    Note over SDK: SDK 只是传递消息
-    Note over CLI: CLI 才是真正的 Agent
+    Backend->>SDK: session.send_message("读取 config.json")
+    SDK->>Transport: 通过自定义 Transport 发送
+    Transport->>CLI: stdin 写入命令
 
-    Backend->>SDK: 发送用户消息
-    SDK->>CLI: 通过 Transport 传递
     CLI->>Claude: 调用 Claude API
-    Claude-->>CLI: 返回推理结果
+    Claude-->>CLI: 返回：需要使用 Read 工具
 
-    loop Tool 执行循环（在 CLI 内部）
-        CLI->>CLI: 解析 Tool Call
-        CLI->>CLI: 执行工具（如 Read, Edit, Bash）
-        CLI->>Claude: 发送 Tool Result
-        Claude-->>CLI: 继续推理
-    end
+    Note over CLI,FS: CLI 的工具需要直接访问文件系统
 
-    CLI-->>SDK: 流式返回事件
-    SDK-->>Backend: 解析后的事件
+    CLI->>FS: Read("/home/user/config.json")
+    FS-->>CLI: 文件内容
+
+    CLI->>Claude: 发送工具结果
+    Claude-->>CLI: 继续推理...
+
+    CLI-->>Transport: stdout 输出事件流
+    Transport-->>SDK: 解析事件
+    SDK-->>Backend: 返回结果
 ```
 
-**关键点**：
-- **SDK 不包含 AI** - 它不能独立工作
-- **CLI 是完整的 Agent** - 包含推理、工具、上下文管理
-- **工具执行在 CLI 内部** - Read, Edit, Bash 等都是 CLI 内置的
+**CLI 必须在沙箱内的原因**：
+1. **文件系统访问** - Read, Write, Edit 工具需要直接读写文件
+2. **命令执行** - Bash 工具需要在沙箱环境中执行
+3. **环境隔离** - 用户代码在沙箱内运行，CLI 需要在同一环境
+4. **工具实现** - 50+ 工具都假设运行在目标环境中
 
-#### 9.10.3 如果不用 CLI，需要自己实现什么？
+#### 9.10.4 E2BSandboxTransport 的作用
+
+```python
+# Claudex 自定义的 Transport 实现
+class E2BSandboxTransport(Transport):
+    """
+    让 SDK 能够控制运行在远程 E2B 沙箱中的 CLI
+    """
+
+    def __init__(self, sandbox: AsyncSandbox):
+        self.sandbox = sandbox
+        self.process = None  # CLI 进程
+
+    async def connect(self):
+        # 在沙箱中启动 CLI 进程
+        self.process = await self.sandbox.commands.run(
+            "claude --output-format=stream-json",
+            background=True
+        )
+
+    async def write(self, data: str):
+        # 通过沙箱 API 向 CLI stdin 写入
+        await self.process.stdin.write(data)
+
+    async def read_messages(self) -> AsyncIterator[dict]:
+        # 从 CLI stdout 读取并解析事件
+        async for line in self.process.stdout:
+            yield json.loads(line)
+```
+
+```mermaid
+graph LR
+    subgraph "服务器端"
+        SDK[Claude Agent SDK]
+        TRANSPORT[E2BSandboxTransport]
+    end
+
+    subgraph "E2B 沙箱"
+        CLI[Claude CLI]
+        FS[文件系统]
+        BASH[Shell]
+    end
+
+    SDK --> TRANSPORT
+    TRANSPORT -->|网络| CLI
+    CLI --> FS
+    CLI --> BASH
+```
+
+#### 9.10.5 核心区别总结
+
+| 组件 | 角色 | 运行位置 | 职责 |
+|------|------|----------|------|
+| **Claude Agent SDK** | 上层封装 | 服务器端 | 提供 Python API，管理 CLI |
+| **E2BSandboxTransport** | 通信桥梁 | 服务器端 | 连接 SDK 和远程 CLI |
+| **Claude CLI** | 底层引擎 | 沙箱内 | AI 推理 + 工具执行 |
+
+**关键点**：
+- **SDK 是控制器** - 提供友好的 Python API
+- **CLI 是执行器** - 包含 AI 推理和所有工具实现
+- **Transport 是桥梁** - 让 SDK 能控制远程沙箱中的 CLI
+
+#### 9.10.6 如果不用 CLI，需要自己实现什么？
 
 ```python
 # Manus 风格：不使用 Claude CLI，自己实现所有能力
@@ -1445,7 +1541,7 @@ class ManusStyleAgentService:
             messages.append({"role": "user", "content": tool_results})
 ```
 
-#### 9.10.4 Claudex 选择 CLI 的原因
+#### 9.10.7 Claudex 选择 CLI 的原因
 
 ```mermaid
 graph TB
