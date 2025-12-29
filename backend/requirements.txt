@@ -15,6 +15,7 @@ jinja2>=3.1.3,<4.0
 python-multipart
 aiohttp
 e2b==1.3.4rc1
+docker>=7.1.0
 claude-agent-sdk>=0.1.14
 mcp
 sqladmin[full]

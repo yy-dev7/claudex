@@ -34,6 +34,8 @@ export const BUILT_IN_AGENTS: CustomAgent[] = [
   },
 ];
 
+export const MOBILE_BREAKPOINT = 768;
+
 export const LAYOUT = {
   ACTIVITY_BAR_WIDTH: 48,
   SIDEBAR_WIDTH: 256,

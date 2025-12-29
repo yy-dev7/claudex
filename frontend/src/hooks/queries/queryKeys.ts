@@ -14,6 +14,7 @@ export const queryKeys = {
       ['sandbox', sandboxId, 'file-content', filePath] as const,
     filesMetadata: (sandboxId: string) => ['sandbox', sandboxId, 'files-metadata'] as const,
     secrets: (sandboxId: string) => ['sandbox', sandboxId, 'secrets'] as const,
+    ideUrl: (sandboxId: string) => ['sandbox', sandboxId, 'ide-url'] as const,
   },
   models: 'models',
   scheduling: {

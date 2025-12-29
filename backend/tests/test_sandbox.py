@@ -3,24 +3,19 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from httpx import AsyncClient
 
-from app.models.db_models import Chat, User
-from app.services.sandbox import SandboxService
+from tests.conftest import SandboxTestContext
 
 
 class TestSandboxPreviewLinks:
     async def test_get_preview_links(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-
-        response = await async_client.get(
-            f"/api/v1/sandbox/{chat.sandbox_id}/preview-links",
-            headers=auth_headers,
+        ctx = sandbox_test_context
+        response = await ctx.client.get(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/preview-links",
+            headers=ctx.auth_headers,
         )
 
         assert response.status_code == 200
@@ -30,13 +25,11 @@ class TestSandboxPreviewLinks:
 
     async def test_get_preview_links_unauthorized(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-
-        response = await async_client.get(
-            f"/api/v1/sandbox/{chat.sandbox_id}/preview-links",
+        ctx = sandbox_test_context
+        response = await ctx.client.get(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/preview-links",
         )
 
         assert response.status_code == 401
@@ -45,15 +38,12 @@ class TestSandboxPreviewLinks:
 class TestSandboxFiles:
     async def test_get_files_metadata(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-
-        response = await async_client.get(
-            f"/api/v1/sandbox/{chat.sandbox_id}/files/metadata",
-            headers=auth_headers,
+        ctx = sandbox_test_context
+        response = await ctx.client.get(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/files/metadata",
+            headers=ctx.auth_headers,
         )
 
         assert response.status_code == 200
@@ -63,18 +53,16 @@ class TestSandboxFiles:
 
     async def test_write_file(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-        test_path = "/home/user/test_integration.txt"
-        test_content = "Integration test content"
+        ctx = sandbox_test_context
+        test_path = f"/home/user/test_{ctx.provider}.txt"
+        test_content = f"Integration test content ({ctx.provider})"
 
-        write_response = await async_client.put(
-            f"/api/v1/sandbox/{chat.sandbox_id}/files",
+        write_response = await ctx.client.put(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/files",
             json={"file_path": test_path, "content": test_content},
-            headers=auth_headers,
+            headers=ctx.auth_headers,
         )
 
         assert write_response.status_code == 200
@@ -82,35 +70,39 @@ class TestSandboxFiles:
 
     async def test_get_file_content(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
+        ctx = sandbox_test_context
+        test_filename = f"read_test_{ctx.provider}.txt"
+        test_path = f"/home/user/{test_filename}"
+        test_content = f"Read test content ({ctx.provider})"
 
-        response = await async_client.get(
-            f"/api/v1/sandbox/{chat.sandbox_id}/files/content/test_integration.txt",
-            headers=auth_headers,
+        await ctx.client.put(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/files",
+            json={"file_path": test_path, "content": test_content},
+            headers=ctx.auth_headers,
+        )
+
+        response = await ctx.client.get(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/files/content/{test_filename}",
+            headers=ctx.auth_headers,
         )
 
         assert response.status_code == 200
         data = response.json()
         assert "content" in data
         assert "path" in data
-        assert data["path"] == "test_integration.txt"
-        assert data["content"] == "Integration test content"
+        assert data["path"] == test_filename
+        assert data["content"] == test_content
 
     async def test_get_file_not_found(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-
-        response = await async_client.get(
-            f"/api/v1/sandbox/{chat.sandbox_id}/files/content/nonexistent/file.txt",
-            headers=auth_headers,
+        ctx = sandbox_test_context
+        response = await ctx.client.get(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/files/content/nonexistent/file.txt",
+            headers=ctx.auth_headers,
         )
 
         assert response.status_code == 404
@@ -119,15 +111,12 @@ class TestSandboxFiles:
 class TestSandboxSecrets:
     async def test_get_secrets(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-
-        response = await async_client.get(
-            f"/api/v1/sandbox/{chat.sandbox_id}/secrets",
-            headers=auth_headers,
+        ctx = sandbox_test_context
+        response = await ctx.client.get(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/secrets",
+            headers=ctx.auth_headers,
         )
 
         assert response.status_code == 200
@@ -137,43 +126,67 @@ class TestSandboxSecrets:
 
     async def test_add_and_delete_secret(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-        secret_key = "TEST_SECRET_KEY"
-        secret_value = "test_secret_value"
+        ctx = sandbox_test_context
+        secret_key = f"TEST_SECRET_{ctx.provider.upper()}"
+        secret_value = f"test_secret_value_{ctx.provider}"
 
-        add_response = await async_client.post(
-            f"/api/v1/sandbox/{chat.sandbox_id}/secrets",
+        add_response = await ctx.client.post(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/secrets",
             json={"key": secret_key, "value": secret_value},
-            headers=auth_headers,
+            headers=ctx.auth_headers,
         )
 
         assert add_response.status_code == 200
         assert secret_key in add_response.json()["message"]
 
-        delete_response = await async_client.delete(
-            f"/api/v1/sandbox/{chat.sandbox_id}/secrets/{secret_key}",
-            headers=auth_headers,
+        delete_response = await ctx.client.delete(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/secrets/{secret_key}",
+            headers=ctx.auth_headers,
         )
 
         assert delete_response.status_code == 200
+
+    async def test_update_secret(
+        self,
+        sandbox_test_context: SandboxTestContext,
+    ) -> None:
+        ctx = sandbox_test_context
+        secret_key = f"UPDATE_SECRET_{ctx.provider.upper()}"
+        secret_value = f"initial_value_{ctx.provider}"
+        updated_value = f"updated_value_{ctx.provider}"
+
+        await ctx.client.post(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/secrets",
+            json={"key": secret_key, "value": secret_value},
+            headers=ctx.auth_headers,
+        )
+
+        update_response = await ctx.client.put(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/secrets/{secret_key}",
+            json={"value": updated_value},
+            headers=ctx.auth_headers,
+        )
+
+        assert update_response.status_code == 200
+        assert secret_key in update_response.json()["message"]
+
+        await ctx.client.delete(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/secrets/{secret_key}",
+            headers=ctx.auth_headers,
+        )
 
 
 class TestSandboxDownload:
     async def test_download_zip(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-
-        response = await async_client.get(
-            f"/api/v1/sandbox/{chat.sandbox_id}/download-zip",
-            headers=auth_headers,
+        ctx = sandbox_test_context
+        response = await ctx.client.get(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/download-zip",
+            headers=ctx.auth_headers,
         )
 
         assert response.status_code == 200
@@ -184,30 +197,55 @@ class TestSandboxDownload:
 class TestSandboxIdeTheme:
     async def test_set_ide_theme(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-
-        response = await async_client.put(
-            f"/api/v1/sandbox/{chat.sandbox_id}/ide-theme",
+        ctx = sandbox_test_context
+        response = await ctx.client.put(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/ide-theme",
             json={"theme": "dark"},
-            headers=auth_headers,
+            headers=ctx.auth_headers,
         )
 
         assert response.status_code == 200
 
     async def test_set_ide_theme_unauthorized(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
+        sandbox_test_context: SandboxTestContext,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-
-        response = await async_client.put(
-            f"/api/v1/sandbox/{chat.sandbox_id}/ide-theme",
+        ctx = sandbox_test_context
+        response = await ctx.client.put(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/ide-theme",
             json={"theme": "dark"},
+        )
+
+        assert response.status_code == 401
+
+
+class TestSandboxIdeUrl:
+    async def test_get_ide_url(
+        self,
+        sandbox_test_context: SandboxTestContext,
+    ) -> None:
+        ctx = sandbox_test_context
+        response = await ctx.client.get(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/ide-url",
+            headers=ctx.auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "url" in data
+        if ctx.provider == "docker":
+            assert data["url"] is not None
+            assert "http" in data["url"]
+
+    async def test_get_ide_url_unauthorized(
+        self,
+        sandbox_test_context: SandboxTestContext,
+    ) -> None:
+        ctx = sandbox_test_context
+        response = await ctx.client.get(
+            f"/api/v1/sandbox/{ctx.chat.sandbox_id}/ide-url",
         )
 
         assert response.status_code == 401
@@ -217,36 +255,39 @@ class TestSandboxUnauthorized:
     @pytest.mark.parametrize(
         "method,endpoint_suffix,json_body",
         [
+            ("GET", "/preview-links", None),
             ("GET", "/files/metadata", None),
             ("PUT", "/files", {"file_path": "/test.txt", "content": "test"}),
             ("GET", "/files/content/test.txt", None),
             ("GET", "/secrets", None),
             ("POST", "/secrets", {"key": "TEST", "value": "test"}),
+            ("PUT", "/secrets/TEST", {"value": "updated"}),
             ("DELETE", "/secrets/TEST", None),
             ("GET", "/download-zip", None),
+            ("PUT", "/ide-theme", {"theme": "dark"}),
+            ("GET", "/ide-url", None),
         ],
     )
     async def test_sandbox_endpoints_unauthorized(
         self,
-        async_client: AsyncClient,
-        integration_chat_fixture: tuple[User, Chat, SandboxService],
+        sandbox_test_context: SandboxTestContext,
         method: str,
         endpoint_suffix: str,
         json_body: dict | None,
     ) -> None:
-        _, chat, _ = integration_chat_fixture
-        endpoint = f"/api/v1/sandbox/{chat.sandbox_id}{endpoint_suffix}"
+        ctx = sandbox_test_context
+        endpoint = f"/api/v1/sandbox/{ctx.chat.sandbox_id}{endpoint_suffix}"
 
         if method == "GET":
-            response = await async_client.get(endpoint)
+            response = await ctx.client.get(endpoint)
         elif method == "PUT":
-            response = await async_client.put(endpoint, json=json_body)
+            response = await ctx.client.put(endpoint, json=json_body)
         elif method == "POST":
-            response = await async_client.post(endpoint, json=json_body)
+            response = await ctx.client.post(endpoint, json=json_body)
         elif method == "DELETE":
-            response = await async_client.delete(endpoint)
+            response = await ctx.client.delete(endpoint)
         else:
-            response = await async_client.request(method, endpoint)
+            response = await ctx.client.request(method, endpoint)
 
         assert response.status_code == 401
 
@@ -258,37 +299,40 @@ class TestSandboxNotFound:
             ("GET", "/preview-links", None),
             ("GET", "/files/metadata", None),
             ("PUT", "/files", {"file_path": "/test.txt", "content": "test"}),
+            ("GET", "/files/content/test.txt", None),
             ("GET", "/secrets", None),
             ("POST", "/secrets", {"key": "TEST", "value": "test"}),
+            ("PUT", "/secrets/TEST", {"value": "updated"}),
+            ("DELETE", "/secrets/TEST", None),
             ("GET", "/download-zip", None),
             ("PUT", "/ide-theme", {"theme": "dark"}),
+            ("GET", "/ide-url", None),
         ],
     )
     async def test_sandbox_endpoints_not_found(
         self,
-        async_client: AsyncClient,
-        integration_user_fixture: User,
-        auth_headers: dict[str, str],
+        sandbox_test_context: SandboxTestContext,
         method: str,
         endpoint_suffix: str,
         json_body: dict | None,
     ) -> None:
+        ctx = sandbox_test_context
         fake_sandbox_id = f"fake-sandbox-{uuid.uuid4().hex[:8]}"
         endpoint = f"/api/v1/sandbox/{fake_sandbox_id}{endpoint_suffix}"
 
         if method == "GET":
-            response = await async_client.get(endpoint, headers=auth_headers)
+            response = await ctx.client.get(endpoint, headers=ctx.auth_headers)
         elif method == "PUT":
-            response = await async_client.put(
-                endpoint, json=json_body, headers=auth_headers
+            response = await ctx.client.put(
+                endpoint, json=json_body, headers=ctx.auth_headers
             )
         elif method == "POST":
-            response = await async_client.post(
-                endpoint, json=json_body, headers=auth_headers
+            response = await ctx.client.post(
+                endpoint, json=json_body, headers=ctx.auth_headers
             )
         else:
-            response = await async_client.request(
-                method, endpoint, headers=auth_headers
+            response = await ctx.client.request(
+                method, endpoint, headers=ctx.auth_headers
             )
 
         assert response.status_code == 404

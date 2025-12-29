@@ -108,7 +108,7 @@ export function handleServiceError(error: unknown): ServiceError {
       return new AuthenticationError();
     }
 
-    if (error.message.includes('Failed to fetch') || error.message.includes('Network')) {
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
       return new NetworkError();
     }
 

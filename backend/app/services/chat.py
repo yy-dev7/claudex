@@ -112,27 +112,12 @@ class ChatService(BaseDbService[Chat]):
             )
 
     async def create_chat(self, user: User, chat_data: ChatCreate) -> Chat:
-        can_continue = await self.user_service.check_message_limit(user.id)
-        if not can_continue:
-            raise ChatException(
-                "Daily message limit exceeded. You have reached your daily message limit.",
-                error_code=ErrorCode.CHAT_DAILY_LIMIT_EXCEEDED,
-                details={"user_id": str(user.id)},
-                status_code=429,
-            )
+        await self._check_message_limit(user.id)
 
         user_settings = cast(
             UserSettings, await self.user_service.get_user_settings(user.id)
         )
-        try:
-            validate_e2b_api_key(user_settings)
-            await validate_model_api_keys(
-                user_settings, chat_data.model_id, self.session_factory
-            )
-        except APIKeyValidationError as e:
-            raise ChatException(
-                str(e), error_code=ErrorCode.API_KEY_MISSING, status_code=400
-            ) from e
+        await self._validate_api_keys(user_settings, chat_data.model_id)
 
         sandbox_id = await self.sandbox_service.create_sandbox()
 
@@ -142,6 +127,8 @@ class ChatService(BaseDbService[Chat]):
         custom_skills = user_settings.custom_skills
         custom_slash_commands = user_settings.custom_slash_commands
         custom_agents = user_settings.custom_agents
+        auto_compact_disabled = user_settings.auto_compact_disabled
+        codex_auth_json = user_settings.codex_auth_json
 
         await self.sandbox_service.initialize_sandbox(
             sandbox_id=sandbox_id,
@@ -152,6 +139,8 @@ class ChatService(BaseDbService[Chat]):
             custom_slash_commands=custom_slash_commands,
             custom_agents=custom_agents,
             user_id=str(user.id),
+            auto_compact_disabled=auto_compact_disabled,
+            codex_auth_json=codex_auth_json,
         )
 
         async with self.session_factory() as db:
@@ -159,6 +148,7 @@ class ChatService(BaseDbService[Chat]):
                 title=self._truncate_title(chat_data.title),
                 user_id=user.id,
                 sandbox_id=sandbox_id,
+                sandbox_provider=user_settings.sandbox_provider,
             )
 
             db.add(chat)
@@ -383,25 +373,10 @@ class ChatService(BaseDbService[Chat]):
                 status_code=400,
             )
 
-        can_continue = await self.user_service.check_message_limit(current_user.id)
-        if not can_continue:
-            raise ChatException(
-                "Daily message limit exceeded. You have reached your daily message limit.",
-                error_code=ErrorCode.CHAT_DAILY_LIMIT_EXCEEDED,
-                details={"user_id": str(current_user.id)},
-                status_code=429,
-            )
+        await self._check_message_limit(current_user.id)
 
         user_settings = await self.user_service.get_user_settings(current_user.id)
-        try:
-            validate_e2b_api_key(user_settings)
-            await validate_model_api_keys(
-                user_settings, request.model_id, self.session_factory
-            )
-        except APIKeyValidationError as e:
-            raise ChatException(
-                str(e), error_code=ErrorCode.API_KEY_MISSING, status_code=400
-            ) from e
+        await self._validate_api_keys(user_settings, request.model_id)
 
         chat = await self.get_chat(request.chat_id, current_user)
 
@@ -448,8 +423,11 @@ class ChatService(BaseDbService[Chat]):
         assistant_message = await self._create_assistant_message(chat, request.model_id)
 
         system_prompt = build_system_prompt_for_chat(
-            chat.sandbox_id or "", user_settings
+            chat.sandbox_id or "",
+            user_settings,
+            selected_prompt_name=request.selected_prompt_name,
         )
+        is_custom_prompt = bool(request.selected_prompt_name)
         custom_instructions = (
             user_settings.custom_instructions if user_settings else None
         )
@@ -467,6 +445,7 @@ class ChatService(BaseDbService[Chat]):
                 assistant_message_id=str(assistant_message.id),
                 thinking_mode=request.thinking_mode,
                 attachments=attachments,
+                is_custom_prompt=is_custom_prompt,
             )
 
             await self._store_active_task(chat_id, task.id)
@@ -545,6 +524,28 @@ class ChatService(BaseDbService[Chat]):
             return title
         return title[:CHAT_TITLE_MAX_LENGTH] + "..."
 
+    async def _check_message_limit(self, user_id: UUID) -> None:
+        can_continue = await self.user_service.check_message_limit(user_id)
+        if not can_continue:
+            raise ChatException(
+                "Daily message limit exceeded. You have reached your daily message limit.",
+                error_code=ErrorCode.CHAT_DAILY_LIMIT_EXCEEDED,
+                details={"user_id": str(user_id)},
+                status_code=429,
+            )
+
+    async def _validate_api_keys(
+        self, user_settings: UserSettings, model_id: str
+    ) -> None:
+        try:
+            if user_settings.sandbox_provider == "e2b":
+                validate_e2b_api_key(user_settings)
+            await validate_model_api_keys(user_settings, model_id, self.session_factory)
+        except APIKeyValidationError as e:
+            raise ChatException(
+                str(e), error_code=ErrorCode.API_KEY_MISSING, status_code=400
+            ) from e
+
     async def _create_assistant_message(self, chat: Chat, model_id: str) -> Message:
         return await self.message_service.create_message(
             chat.id,
@@ -568,6 +569,7 @@ class ChatService(BaseDbService[Chat]):
         assistant_message_id: str,
         thinking_mode: str | None,
         attachments: list[MessageAttachmentDict] | None,
+        is_custom_prompt: bool = False,
     ) -> "AsyncResult[object]":
         return process_chat.delay(
             prompt=prompt,
@@ -584,6 +586,7 @@ class ChatService(BaseDbService[Chat]):
                 "title": chat.title,
                 "sandbox_id": chat.sandbox_id,
                 "session_id": chat.session_id,
+                "sandbox_provider": chat.sandbox_provider,
             },
             permission_mode=permission_mode,
             model_id=model_id,
@@ -591,6 +594,7 @@ class ChatService(BaseDbService[Chat]):
             assistant_message_id=assistant_message_id,
             thinking_mode=thinking_mode,
             attachments=attachments,
+            is_custom_prompt=is_custom_prompt,
         )
 
     async def _store_active_task(self, chat_id: UUID, task_id: str) -> None:
@@ -623,10 +627,11 @@ class ChatService(BaseDbService[Chat]):
             return False
 
         prev_provider = await ai_model_service.get_model_provider(last_message.model_id)
-        if prev_provider == ModelProvider.OPENROUTER:
+        if prev_provider in [ModelProvider.OPENROUTER, ModelProvider.ZAI]:
             logger.info(
-                "Session cleaning needed for chat %s: switching from OpenRouter to %s",
+                "Session cleaning needed for chat %s: switching from %s to %s",
                 chat_id,
+                prev_provider,
                 new_provider,
             )
             return True

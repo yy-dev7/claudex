@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:13
+    image: postgres:13-alpine
     container_name: claudex-postgres
     restart: always
     command: -c max_connections=600
@@ -34,6 +34,14 @@ services:
       timeout: 5s
       retries: 5
 
+  sandbox-setup:
+    image: docker:20.10-cli
+    container_name: claudex-sandbox-setup
+    restart: "no"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: sh -c "docker pull ${DOCKER_IMAGE:-ghcr.io/mng-dev-ai/claudex-sandbox:latest}"
+
   api:
     build:
       context: ./backend
@@ -41,17 +49,24 @@ services:
     container_name: claudex-api
     restart: unless-stopped
     command: ["api"]
+    user: root
+    privileged: true
+    group_add:
+      - "0"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      sandbox-setup:
+        condition: service_completed_successfully
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     volumes:
       - ./backend:/app
       - ./storage:/app/storage
       - /app/__pycache__
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
       - REDIS_URL=redis://redis:6379/0
@@ -65,15 +80,22 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     command: ["celery-worker"]
+    user: root
+    privileged: true
+    group_add:
+      - "0"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      sandbox-setup:
+        condition: service_completed_successfully
     volumes:
       - ./backend:/app
       - ./storage:/app/storage
       - /app/__pycache__
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
       - REDIS_URL=redis://redis:6379/0

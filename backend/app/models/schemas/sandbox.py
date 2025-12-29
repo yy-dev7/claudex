@@ -50,3 +50,7 @@ class UpdateSecretRequest(BaseModel):
 
 class UpdateIDEThemeRequest(BaseModel):
     theme: Literal["dark", "light"]
+
+
+class IDEUrlResponse(BaseModel):
+    url: str | None

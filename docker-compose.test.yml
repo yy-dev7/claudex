@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # Test PostgreSQL database
   postgres-test:
-    image: postgres:13
+    image: postgres:13-alpine
     container_name: claudex-postgres-test
     environment:
       POSTGRES_USER: postgres
@@ -53,14 +53,19 @@ services:
       - PYTHONUNBUFFERED=1
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
       - E2B_API_KEY=${E2B_API_KEY:-}
+      - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
       - ./backend:/app
       - /app/__pycache__
       - /app/.pytest_cache
+      - /var/run/docker.sock:/var/run/docker.sock
     command: ["pytest", "-v", "--tb=short"]
     networks:
       - test-network
+      - claudex-sandbox-net
 
 networks:
   test-network:
+    driver: bridge
+  claudex-sandbox-net:
     driver: bridge

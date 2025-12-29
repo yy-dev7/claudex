@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, forwardRef, useCallback } from 'react';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 export interface TextareaProps {
   message: string;
@@ -19,6 +20,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   const textareaRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCursorPositionRef = useRef<number>(-1);
+  const isMobile = useIsMobile();
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -29,10 +31,10 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   }, [message]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!isLoading && textareaRef.current) {
+    if (!isLoading && textareaRef.current && !isMobile) {
       textareaRef.current.focus();
     }
-  }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoading, isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
@@ -65,6 +67,17 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     }
   }, [debouncedCursorChange]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const scrollIntoViewOnMobile = useCallback(() => {
+    if (isMobile && textareaRef.current) {
+      setTimeout(() => {
+        textareaRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }, 150);
+    }
+  }, [isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setMessage(e.target.value);
@@ -82,6 +95,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       onKeyUp={handleCursorChange}
       onClick={handleCursorChange}
       onSelect={handleCursorChange}
+      onFocus={scrollIntoViewOnMobile}
       placeholder={placeholder}
       disabled={isLoading}
       rows={1}

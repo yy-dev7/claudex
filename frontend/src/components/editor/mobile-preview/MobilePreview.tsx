@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { Smartphone, RefreshCw } from 'lucide-react';
 import { Button, Select, Spinner } from '@/components/ui';
 import { usePreviewLinksQuery } from '@/hooks/queries';
+import { NoOpenPortsState } from '../shared/NoOpenPortsState';
 
 export interface MobilePreviewProps {
   sandboxId?: string;
@@ -25,14 +26,13 @@ export const MobilePreview = ({ sandboxId }: MobilePreviewProps) => {
   const selectedPort =
     ports.length > 0 ? ports.find((p) => p.port === selectedPortId) || ports[0] : null;
 
-  const port = selectedPort?.port || 8081;
+  const previewUrl = selectedPort?.previewUrl || '';
+  const expoUrl = previewUrl.replace(/^https?:\/\//, 'exp://');
 
   useEffect(() => {
-    if (!sandboxId) return;
+    if (!previewUrl) return;
 
     setIsLoadingQr(true);
-    const expoUrl = `exp://${port}-${sandboxId}.e2b.dev`;
-
     QRCode.toDataURL(expoUrl, {
       width: 280,
       margin: 1,
@@ -43,7 +43,7 @@ export const MobilePreview = ({ sandboxId }: MobilePreviewProps) => {
     })
       .then(setQrCode)
       .finally(() => setIsLoadingQr(false));
-  }, [sandboxId, port]);
+  }, [previewUrl, expoUrl]);
 
   const handleRefresh = useCallback(() => {
     setIframeKey((prev) => prev + 1);
@@ -61,8 +61,9 @@ export const MobilePreview = ({ sandboxId }: MobilePreviewProps) => {
     );
   }
 
-  const expoUrl = `exp://${port}-${sandboxId}.e2b.dev`;
-  const previewUrl = `https://${port}-${sandboxId}.e2b.dev`;
+  if (ports.length === 0) {
+    return <NoOpenPortsState onRefresh={handleRefresh} loading={loadingPorts} />;
+  }
 
   return (
     <div className="flex h-full bg-surface dark:bg-surface-dark">
@@ -99,7 +100,7 @@ export const MobilePreview = ({ sandboxId }: MobilePreviewProps) => {
 
             <div className="relative h-full w-full overflow-hidden rounded-4xl bg-white dark:bg-black">
               <iframe
-                key={`${port}-${iframeKey}`}
+                key={`${previewUrl}-${iframeKey}`}
                 src={previewUrl}
                 className="h-full w-full border-0"
                 title="App Preview"

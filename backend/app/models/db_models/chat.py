@@ -21,6 +21,7 @@ class Chat(Base):
         GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     sandbox_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    sandbox_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
     session_id: Mapped[str | None] = mapped_column(String, nullable=True)
     context_token_usage: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(

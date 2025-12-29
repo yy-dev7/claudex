@@ -69,6 +69,13 @@ export interface CustomCommand {
     | null;
 }
 
+export interface CustomPrompt {
+  name: string;
+  content: string;
+}
+
+export type SandboxProvider = 'e2b' | 'docker';
+
 export interface UserSettings {
   id: string;
   user_id: string;
@@ -77,13 +84,17 @@ export interface UserSettings {
   claude_code_oauth_token: string | null;
   z_ai_api_key: string | null;
   openrouter_api_key: string | null;
+  codex_auth_json: string | null;
   custom_instructions: string | null;
   custom_agents: CustomAgent[] | null;
   custom_mcps: CustomMcp[] | null;
   custom_env_vars: CustomEnvVar[] | null;
   custom_skills: CustomSkill[] | null;
   custom_slash_commands: CustomCommand[] | null;
+  custom_prompts: CustomPrompt[] | null;
   notification_sound_enabled?: boolean;
+  sandbox_provider: SandboxProvider;
+  auto_compact_disabled?: boolean;
   created_at: string;
   updated_at: string;
 }

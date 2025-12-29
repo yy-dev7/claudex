@@ -25,5 +25,6 @@ export * from './usePermissionRequest';
 export * from './useSandboxFiles';
 export * from './useSlashCommandSuggestions';
 export * from './useSuggestionBase';
+export * from './useSwipeGesture';
 export * from './useTaskManagement';
 export * from './useXterm';

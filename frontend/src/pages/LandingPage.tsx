@@ -64,6 +64,10 @@ export function LandingPage() {
     return settings?.custom_slash_commands?.filter((cmd) => cmd.enabled) || [];
   }, [settings?.custom_slash_commands]);
 
+  const customPrompts = useMemo(() => {
+    return settings?.custom_prompts || [];
+  }, [settings?.custom_prompts]);
+
   useEffect(() => {
     setCurrentChat(null);
   }, [setCurrentChat]);
@@ -150,7 +154,11 @@ export function LandingPage() {
                 </p>
               </div>
             </div>
-            <ChatProvider customAgents={allAgents} customSlashCommands={enabledSlashCommands}>
+            <ChatProvider
+              customAgents={allAgents}
+              customSlashCommands={enabledSlashCommands}
+              customPrompts={customPrompts}
+            >
               <Input
                 message={message}
                 setMessage={setMessage}

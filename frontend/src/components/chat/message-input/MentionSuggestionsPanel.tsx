@@ -5,6 +5,7 @@ import type { MentionItem } from '@/types';
 interface MentionSuggestionsPanelProps {
   files: MentionItem[];
   agents: MentionItem[];
+  prompts: MentionItem[];
   highlightedIndex: number;
   onSelect: (item: MentionItem) => void;
 }
@@ -12,6 +13,7 @@ interface MentionSuggestionsPanelProps {
 export const MentionSuggestionsPanel = memo(function MentionSuggestionsPanel({
   files,
   agents,
+  prompts,
   highlightedIndex,
   onSelect,
 }: MentionSuggestionsPanelProps) {
@@ -19,7 +21,8 @@ export const MentionSuggestionsPanel = memo(function MentionSuggestionsPanel({
 
   const hasFiles = files.length > 0;
   const hasAgents = agents.length > 0;
-  const hasSuggestions = hasFiles || hasAgents;
+  const hasPrompts = prompts.length > 0;
+  const hasSuggestions = hasFiles || hasAgents || hasPrompts;
 
   useEffect(() => {
     if (highlightedIndex >= 0 && mentionRefs.current[highlightedIndex]) {
@@ -123,6 +126,49 @@ export const MentionSuggestionsPanel = memo(function MentionSuggestionsPanel({
                           {agent.description}
                         </span>
                       )}
+                    </div>
+                  </Button>
+                );
+              })}
+            </>
+          )}
+          {hasPrompts && (
+            <>
+              <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-text-tertiary dark:text-text-dark-tertiary">
+                Prompts
+              </div>
+              {prompts.map((prompt, index) => {
+                const globalIndex = files.length + agents.length + index;
+                const isActive = globalIndex === highlightedIndex;
+                return (
+                  <Button
+                    key={prompt.path}
+                    ref={(el) => {
+                      mentionRefs.current[globalIndex] = el;
+                    }}
+                    type="button"
+                    variant="unstyled"
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
+                      isActive
+                        ? 'bg-surface-tertiary dark:bg-surface-dark-tertiary'
+                        : 'hover:bg-surface-secondary dark:hover:bg-surface-dark-secondary'
+                    }`}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      onSelect(prompt);
+                    }}
+                  >
+                    <span className="text-sm">📝</span>
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span
+                        className={`text-xs font-medium leading-tight ${
+                          isActive
+                            ? 'text-text-primary dark:text-text-dark-primary'
+                            : 'text-text-secondary dark:text-text-dark-secondary'
+                        }`}
+                      >
+                        {prompt.name}
+                      </span>
                     </div>
                   </Button>
                 );

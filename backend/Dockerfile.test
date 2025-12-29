@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies and Node.js
+# Install system dependencies, Node.js, and Docker CLI
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gcc \
@@ -10,8 +10,14 @@ RUN apt-get update && \
     curl \
     git \
     gnupg \
+    ca-certificates \
+    gosu \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y docker-ce-cli \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -37,12 +43,11 @@ ENV PYTHONPATH=/app
 RUN mkdir -p /home/appuser/storage/images /home/appuser/storage/pdfs /home/appuser/storage/xlsx
 
 # Create a non-root user for running tests
-RUN useradd -m -u 1000 testuser && chown -R testuser:testuser /app
+RUN useradd -m -u 1000 testuser && \
+    chown -R testuser:testuser /app /home/appuser
 
-# Create appuser directory and give testuser ownership
-RUN mkdir -p /home/appuser && chown -R testuser:testuser /home/appuser
+# Make entrypoint executable
+RUN chmod +x /app/entrypoint-test.sh
 
-USER testuser
-
-# Default command runs pytest
+ENTRYPOINT ["/app/entrypoint-test.sh"]
 CMD ["pytest", "-v"]

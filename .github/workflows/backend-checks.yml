@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'sandbox/**'
       - '.github/workflows/backend-checks.yml'
   pull_request:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'sandbox/**'
       - '.github/workflows/backend-checks.yml'
 
 jobs:
@@ -76,8 +78,82 @@ jobs:
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
         run: |
           docker compose -f docker-compose.test.yml build backend-test
-          docker compose -f docker-compose.test.yml run --rm backend-test pytest -v --tb=short --maxfail=5
+          docker compose -f docker-compose.test.yml run --rm backend-test pytest -v --tb=short --maxfail=5 -m "not docker"
 
       - name: Cleanup Docker Compose
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
+
+  test-docker-sandbox:
+    name: Run Docker Sandbox Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: claudex_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-docker-test-${{ hashFiles('backend/requirements-test.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-docker-test-
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements-test.txt
+
+      - name: Build sandbox Docker image
+        run: |
+          cd sandbox/docker
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Run Docker sandbox tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5433/claudex_test
+          REDIS_URL: redis://localhost:6380/0
+          SECRET_KEY: test_secret_key_that_is_long_enough_for_validation_requirements
+          TESTING: "true"
+          ENVIRONMENT: development
+          DOCKER_IMAGE: claudex-sandbox:latest
+        run: |
+          cd backend
+          pytest -v -m docker --tb=short -x
+
+      - name: Cleanup Docker containers
+        if: always()
+        run: |
+          docker ps -a --filter "name=claudex-sandbox-" -q | xargs -r docker rm -f
+          docker network rm claudex-sandbox-net 2>/dev/null || true

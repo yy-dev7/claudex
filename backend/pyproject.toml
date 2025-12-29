@@ -45,7 +45,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-n auto --strict-markers --tb=short --disable-warnings -v"
+addopts = "--strict-markers --tb=short --disable-warnings -v"
+markers = [
+    "docker: marks tests requiring Docker daemon access (run with pytest -m docker)",
+]
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",

@@ -127,6 +127,21 @@ class Settings(BaseSettings):
     # E2B Sandbox configuration
     E2B_TEMPLATE_ID: str = "hg02z8aexvw928qvuq87"
 
+    # Docker Sandbox configuration
+    SANDBOX_PROVIDER: str = "e2b"  # "e2b" or "docker"
+    DOCKER_IMAGE: str = "ghcr.io/mng-dev-ai/claudex-sandbox:latest"
+    DOCKER_NETWORK: str = "claudex-sandbox-net"
+    DOCKER_HOST: str | None = None
+    DOCKER_PREVIEW_BASE_URL: str = "http://localhost"
+    # Traefik subdomain routing for HTTPS sandbox access (see docker_provider.py)
+    # Example: DOCKER_SANDBOX_DOMAIN=sandbox.example.com, DOCKER_TRAEFIK_NETWORK=coolify
+    DOCKER_SANDBOX_DOMAIN: str = ""
+    DOCKER_TRAEFIK_NETWORK: str = ""
+    # Override URL for sandbox->API connectivity (permission server)
+    # Use when host.docker.internal doesn't work (Linux VPS, Coolify, etc.)
+    # Example: DOCKER_PERMISSION_API_URL=http://api:8080
+    DOCKER_PERMISSION_API_URL: str = ""
+
     # Security Headers Configuration
     ENABLE_SECURITY_HEADERS: bool = True
     HSTS_MAX_AGE: int = 31536000

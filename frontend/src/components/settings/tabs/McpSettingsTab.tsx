@@ -66,13 +66,13 @@ export const McpSettingsTab: React.FC<McpSettingsTabProps> = ({
       onDelete={onDeleteMcp}
       renderItem={(mcp, index) => (
         <>
-          <div className="mb-1 flex items-center gap-2">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
             <Plug className="h-4 w-4 flex-shrink-0 text-brand-600 dark:text-brand-400" />
-            <h3 className="truncate text-sm font-medium text-text-primary dark:text-text-dark-primary">
+            <h3 className="min-w-0 max-w-full truncate text-sm font-medium text-text-primary dark:text-text-dark-primary sm:max-w-[250px]">
               {mcp.name}
             </h3>
             <span
-              className={`rounded px-2 py-0.5 text-xs font-medium ${getCommandTypeColor(mcp.command_type)}`}
+              className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${getCommandTypeColor(mcp.command_type)}`}
             >
               {getCommandTypeBadge(mcp.command_type)}
             </span>

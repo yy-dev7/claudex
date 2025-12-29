@@ -10,6 +10,7 @@ from app.models.types import (
     CustomAgentDict,
     CustomEnvVarDict,
     CustomMcpDict,
+    CustomPromptDict,
     CustomSkillDict,
     CustomSlashCommandDict,
 )
@@ -73,6 +74,7 @@ class UserSettings(Base):
     openrouter_api_key: Mapped[str | None] = mapped_column(
         EncryptedString, nullable=True
     )
+    codex_auth_json: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
     custom_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     custom_agents: Mapped[list[CustomAgentDict] | None] = mapped_column(
         JSON, nullable=True
@@ -87,7 +89,16 @@ class UserSettings(Base):
     custom_slash_commands: Mapped[list[CustomSlashCommandDict] | None] = mapped_column(
         JSON, nullable=True
     )
+    custom_prompts: Mapped[list[CustomPromptDict] | None] = mapped_column(
+        JSON, nullable=True
+    )
     notification_sound_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", nullable=False
+    )
+    sandbox_provider: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="docker", server_default="docker"
+    )
+    auto_compact_disabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
     )
     user = relationship("User", back_populates="settings")

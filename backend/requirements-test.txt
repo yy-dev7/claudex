@@ -4,7 +4,6 @@
 pytest
 pytest-asyncio
 pytest-cov
-pytest-xdist
 pytest-testmon
 pytest-recording>=0.13.0
 vcrpy>=6.0.0

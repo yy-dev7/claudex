@@ -1,6 +1,7 @@
 import { memo, ReactNode, useState, useEffect, KeyboardEvent } from 'react';
 import { ChevronDown, LucideIcon, Search, X } from 'lucide-react';
 import { useDropdown } from '@/hooks/useDropdown';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { Button, SelectItem } from '@/components/ui';
 import { fuzzySearch } from '@/utils/fuzzySearch';
 
@@ -51,6 +52,7 @@ function DropdownInner<T>({
 }: DropdownProps<T>) {
   const { isOpen, dropdownRef, setIsOpen } = useDropdown();
   const [searchQuery, setSearchQuery] = useState('');
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!isOpen) {
@@ -158,7 +160,7 @@ function DropdownInner<T>({
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={handleSearchKeyDown}
                   placeholder={searchPlaceholder}
-                  autoFocus
+                  autoFocus={!isMobile}
                   className="h-7 w-full rounded-md border border-border bg-surface-secondary py-1 pl-7 pr-7 text-xs text-text-primary placeholder:text-text-quaternary focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-border-dark dark:bg-surface-dark-secondary dark:text-text-dark-primary dark:placeholder:text-text-dark-quaternary dark:focus:ring-brand-400"
                 />
                 {searchQuery && (

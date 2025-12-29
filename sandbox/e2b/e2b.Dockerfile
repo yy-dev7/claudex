@@ -74,6 +74,11 @@ RUN curl -LO https://go.dev/dl/go1.23.3.linux-amd64.tar.gz \
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
+RUN curl -fsSL https://get.docker.com | sh && \
+    (id -u user &>/dev/null && usermod -aG docker user || true) && \
+    mkdir -p /etc/docker && \
+    echo '{"storage-driver": "vfs"}' > /etc/docker/daemon.json
+
 ENV PATH="/usr/local/bin:/usr/local/lib/nodejs/node-v20.19.0-linux-x64/bin:/usr/local/go/bin:/root/.cargo/bin:${PATH}"
 
 RUN export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1

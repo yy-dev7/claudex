@@ -70,7 +70,7 @@ export const ListManagementTab = <T,>({
   return (
     <div className="space-y-6">
       <div>
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <h2 className="text-sm font-medium text-text-primary dark:text-text-dark-primary">
             {title}
           </h2>
@@ -79,7 +79,7 @@ export const ListManagementTab = <T,>({
             onClick={onAdd}
             variant="outline"
             size="sm"
-            className="flex items-center gap-1.5"
+            className="flex w-full shrink-0 items-center justify-center gap-1.5 sm:w-auto"
             disabled={isMaxLimitReached}
             title={
               isMaxLimitReached && maxLimit ? `Maximum of ${maxLimit} items reached` : undefined

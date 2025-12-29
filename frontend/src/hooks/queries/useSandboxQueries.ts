@@ -16,6 +16,18 @@ export const usePreviewLinksQuery = (
   });
 };
 
+export const useIDEUrlQuery = (
+  sandboxId: string,
+  options?: Partial<UseQueryOptions<string | null>>,
+) => {
+  return useQuery({
+    queryKey: queryKeys.sandbox.ideUrl(sandboxId),
+    queryFn: () => sandboxService.getIDEUrl(sandboxId),
+    enabled: !!sandboxId,
+    ...options,
+  });
+};
+
 export const useFileContentQuery = (
   sandboxId: string,
   filePath: string,
@@ -84,14 +96,17 @@ export const useUpdateFileMutation = (
   });
 };
 
-export const useAddSecretMutation = (
-  options?: UseMutationOptions<void, Error, { sandboxId: string; key: string; value: string }>,
+type SecretMutationVariables = { sandboxId: string; key: string; value?: string };
+
+const useSecretMutation = <TVariables extends { sandboxId: string }>(
+  mutationFn: (variables: TVariables) => Promise<void>,
+  options?: UseMutationOptions<void, Error, TVariables>,
 ) => {
   const queryClient = useQueryClient();
   const { onSuccess, ...restOptions } = options ?? {};
 
   return useMutation({
-    mutationFn: ({ sandboxId, key, value }) => sandboxService.addSecret(sandboxId, key, value),
+    mutationFn,
     onSuccess: async (data, variables, context, mutation) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandbox.secrets(variables.sandboxId) });
       if (onSuccess) {
@@ -101,39 +116,24 @@ export const useAddSecretMutation = (
     ...restOptions,
   });
 };
+
+export const useAddSecretMutation = (
+  options?: UseMutationOptions<void, Error, SecretMutationVariables>,
+) =>
+  useSecretMutation(
+    ({ sandboxId, key, value }) => sandboxService.addSecret(sandboxId, key, value!),
+    options,
+  );
 
 export const useUpdateSecretMutation = (
-  options?: UseMutationOptions<void, Error, { sandboxId: string; key: string; value: string }>,
-) => {
-  const queryClient = useQueryClient();
-  const { onSuccess, ...restOptions } = options ?? {};
-
-  return useMutation({
-    mutationFn: ({ sandboxId, key, value }) => sandboxService.updateSecret(sandboxId, key, value),
-    onSuccess: async (data, variables, context, mutation) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.sandbox.secrets(variables.sandboxId) });
-      if (onSuccess) {
-        await onSuccess(data, variables, context, mutation);
-      }
-    },
-    ...restOptions,
-  });
-};
+  options?: UseMutationOptions<void, Error, SecretMutationVariables>,
+) =>
+  useSecretMutation(
+    ({ sandboxId, key, value }) => sandboxService.updateSecret(sandboxId, key, value!),
+    options,
+  );
 
 export const useDeleteSecretMutation = (
   options?: UseMutationOptions<void, Error, { sandboxId: string; key: string }>,
-) => {
-  const queryClient = useQueryClient();
-  const { onSuccess, ...restOptions } = options ?? {};
-
-  return useMutation({
-    mutationFn: ({ sandboxId, key }) => sandboxService.deleteSecret(sandboxId, key),
-    onSuccess: async (data, variables, context, mutation) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.sandbox.secrets(variables.sandboxId) });
-      if (onSuccess) {
-        await onSuccess(data, variables, context, mutation);
-      }
-    },
-    ...restOptions,
-  });
-};
+) =>
+  useSecretMutation(({ sandboxId, key }) => sandboxService.deleteSecret(sandboxId, key), options);

@@ -271,6 +271,7 @@ async def send_message(
     model_id: str = Form(...),
     permission_mode: Literal["plan", "ask", "auto"] = Form("auto"),
     thinking_mode: str | None = Form(None),
+    selected_prompt_name: str | None = Form(None),
     attached_files: list[UploadFile] = [],
     chat_service: ChatService = Depends(get_chat_service),
     current_user: User = Depends(get_current_user),
@@ -284,6 +285,7 @@ async def send_message(
                 attached_files=attached_files,
                 permission_mode=permission_mode,
                 thinking_mode=thinking_mode,
+                selected_prompt_name=selected_prompt_name,
             ),
             current_user,
         )

@@ -78,6 +78,10 @@ export function ChatPage() {
     return settings?.custom_slash_commands?.filter((cmd) => cmd.enabled) || [];
   }, [settings?.custom_slash_commands]);
 
+  const customPrompts = useMemo(() => {
+    return settings?.custom_prompts || [];
+  }, [settings?.custom_prompts]);
+
   const { selectedFile, setSelectedFile, isRefreshing, handleRefresh, handleFileSelect } =
     useEditorState(refetchFilesMetadata);
 
@@ -260,6 +264,7 @@ export function ChatPage() {
             fileStructure={fileStructure}
             customAgents={allAgents}
             customSlashCommands={enabledSlashCommands}
+            customPrompts={customPrompts}
           />
         )}
         {currentView === 'editor' && (

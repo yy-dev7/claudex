@@ -1,10 +1,9 @@
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Download, ExternalLink, RotateCcw } from 'lucide-react';
 import { Button, Spinner } from '@/components/ui';
+import { useIDEUrlQuery } from '@/hooks/queries';
 import { useUIStore } from '@/store';
 import { sandboxService } from '@/services/sandboxService';
-
-const OPENVSCODE_PORT = 8765;
 
 interface IDEViewProps {
   sandboxId?: string;
@@ -19,10 +18,7 @@ export const IDEView = memo(function IDEView({ sandboxId, isActive = false }: ID
   const prevThemeRef = useRef(theme);
   const hasLoadedRef = useRef(false);
 
-  const ideUrl = useMemo(() => {
-    if (!sandboxId) return null;
-    return `https://${OPENVSCODE_PORT}-${sandboxId}.e2b.dev/?folder=/home/user`;
-  }, [sandboxId]);
+  const { data: ideUrl, isError, isFetched } = useIDEUrlQuery(sandboxId || '');
 
   const iframeKey = useMemo(() => {
     if (!ideUrl) return 'no-ide';
@@ -83,6 +79,12 @@ export const IDEView = memo(function IDEView({ sandboxId, isActive = false }: ID
 
     updateTheme();
   }, [theme, sandboxId, handleReload]);
+
+  useEffect(() => {
+    if (isError || (isFetched && !ideUrl)) {
+      setIsLoading(false);
+    }
+  }, [ideUrl, isError, isFetched]);
 
   if (!sandboxId) {
     return (

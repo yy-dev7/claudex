@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Settings as SettingsIcon, AlertCircle, FileText, FileArchive } from 'lucide-react';
+import { cn } from '@/utils/cn';
 import { useNavigate } from 'react-router-dom';
-import type { UserSettings, UserSettingsUpdate } from '@/types';
+import type { UserSettings, UserSettingsUpdate, SandboxProvider } from '@/types';
 import {
   useSettingsQuery,
   useUpdateSettingsMutation,
@@ -31,7 +32,9 @@ import { TaskDialog } from '@/components/settings/dialogs/TaskDialog';
 import { SkillsSettingsTab } from '@/components/settings/tabs/SkillsSettingsTab';
 import { CommandsSettingsTab } from '@/components/settings/tabs/CommandsSettingsTab';
 import { CommandEditDialog } from '@/components/settings/dialogs/CommandEditDialog';
-import type { ApiFieldKey } from '@/types';
+import { PromptsSettingsTab } from '@/components/settings/tabs/PromptsSettingsTab';
+import { PromptEditDialog } from '@/components/settings/dialogs/PromptEditDialog';
+import type { ApiFieldKey, CustomPrompt } from '@/types';
 import { useModelsQuery } from '@/hooks/queries';
 import { useCrudForm } from '@/hooks/useCrudForm';
 import { useTaskManagement } from '@/hooks/useTaskManagement';
@@ -53,6 +56,7 @@ type TabKey =
   | 'agents'
   | 'skills'
   | 'commands'
+  | 'prompts'
   | 'env_vars'
   | 'instructions'
   | 'tasks';
@@ -68,13 +72,17 @@ const createFallbackSettings = (): UserSettings => ({
   claude_code_oauth_token: null,
   z_ai_api_key: null,
   openrouter_api_key: null,
+  codex_auth_json: null,
   custom_instructions: null,
   custom_agents: null,
   custom_mcps: null,
   custom_env_vars: null,
   custom_skills: null,
   custom_slash_commands: null,
+  custom_prompts: null,
   notification_sound_enabled: true,
+  sandbox_provider: 'docker',
+  auto_compact_disabled: false,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 });
@@ -86,11 +94,14 @@ const TAB_FIELDS: Record<TabKey, (keyof UserSettings)[]> = {
     'claude_code_oauth_token',
     'z_ai_api_key',
     'openrouter_api_key',
+    'codex_auth_json',
+    'auto_compact_disabled',
   ],
   mcp: ['custom_mcps'],
   agents: ['custom_agents'],
   skills: ['custom_skills'],
   commands: ['custom_slash_commands'],
+  prompts: ['custom_prompts'],
   env_vars: ['custom_env_vars'],
   instructions: ['custom_instructions'],
   tasks: [],
@@ -116,6 +127,7 @@ const SettingsPage: React.FC = () => {
     { id: 'agents', label: 'Agents' },
     { id: 'skills', label: 'Skills' },
     { id: 'commands', label: 'Commands' },
+    { id: 'prompts', label: 'Prompts' },
     { id: 'env_vars', label: 'Environment Variables' },
     { id: 'instructions', label: 'Instructions' },
     { id: 'tasks', label: 'Tasks' },
@@ -171,13 +183,17 @@ const SettingsPage: React.FC = () => {
         'claude_code_oauth_token',
         'z_ai_api_key',
         'openrouter_api_key',
+        'codex_auth_json',
         'custom_instructions',
         'custom_agents',
         'custom_mcps',
         'custom_env_vars',
         'custom_skills',
         'custom_slash_commands',
+        'custom_prompts',
         'notification_sound_enabled',
+        'sandbox_provider',
+        'auto_compact_disabled',
       ];
 
       for (const field of fields) {
@@ -249,6 +265,20 @@ const SettingsPage: React.FC = () => {
       validateEnvVarForm(form, editingIndex, localSettings.custom_env_vars || []),
     getArrayKey: 'custom_env_vars',
     itemName: 'environment variable',
+  });
+
+  const promptCrud = useCrudForm<CustomPrompt>(localSettings, persistSettings, {
+    createDefault: (): CustomPrompt => ({ name: '', content: '' }),
+    validateForm: (form, editingIndex) => {
+      if (!form.name.trim()) return 'Name is required';
+      if (!form.content.trim()) return 'Content is required';
+      const prompts = localSettings.custom_prompts || [];
+      const duplicate = prompts.some((p, i) => p.name === form.name.trim() && i !== editingIndex);
+      if (duplicate) return 'A prompt with this name already exists';
+      return null;
+    },
+    getArrayKey: 'custom_prompts',
+    itemName: 'prompt',
   });
 
   const skillManagement = useFileResourceManagement(
@@ -354,6 +384,18 @@ const SettingsPage: React.FC = () => {
     persistSettings((prev) => ({ ...prev, notification_sound_enabled: enabled }));
   };
 
+  const handleSandboxProviderChange = (provider: SandboxProvider | null) => {
+    persistSettings((prev) => ({ ...prev, sandbox_provider: provider }));
+  };
+
+  const handleAutoCompactDisabledChange = (disabled: boolean) => {
+    persistSettings((prev) => ({ ...prev, auto_compact_disabled: disabled }));
+  };
+
+  const handleCodexAuthChange = (content: string | null) => {
+    persistSettings((prev) => ({ ...prev, codex_auth_json: content }));
+  };
+
   const sidebarContent = useMemo(
     () => (
       <Sidebar
@@ -402,7 +444,7 @@ const SettingsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface dark:bg-surface-dark">
+      <div className="min-h-viewport flex items-center justify-center bg-surface dark:bg-surface-dark">
         <Spinner size="lg" className="text-brand-600" />
       </div>
     );
@@ -410,16 +452,16 @@ const SettingsPage: React.FC = () => {
 
   if (fetchError && !settings) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface dark:bg-surface-dark">
+      <div className="min-h-viewport flex items-center justify-center bg-surface dark:bg-surface-dark">
         <div className="text-text-primary dark:text-text-dark-primary">Failed to load settings</div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-full bg-surface dark:bg-surface-dark">
-      <div className="flex flex-1 justify-center px-4 py-6">
-        <div className="w-full max-w-3xl">
+    <div className="flex min-h-full overflow-x-hidden bg-surface dark:bg-surface-dark">
+      <div className="flex min-w-0 flex-1 justify-center px-4 py-6">
+        <div className="w-full min-w-0 max-w-3xl">
           <div className="mb-6">
             <h1 className="flex items-center gap-2 text-xl font-semibold text-text-primary dark:text-text-dark-primary">
               <SettingsIcon className="h-4 w-4" />
@@ -429,7 +471,7 @@ const SettingsPage: React.FC = () => {
 
           <div className="mb-6">
             <nav
-              className="flex space-x-4 border-b border-border dark:border-border-dark"
+              className="scrollbar-none -mx-4 flex overflow-x-auto border-b border-border px-4 dark:border-border-dark sm:mx-0 sm:px-0"
               role="tablist"
               aria-label="Settings sections"
             >
@@ -438,7 +480,10 @@ const SettingsPage: React.FC = () => {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   variant="unstyled"
-                  className={tabButtonClasses(activeTab === tab.id)}
+                  className={cn(
+                    tabButtonClasses(activeTab === tab.id),
+                    'mr-4 shrink-0 whitespace-nowrap last:mr-0 sm:mr-6',
+                  )}
                   role="tab"
                   aria-selected={activeTab === tab.id}
                   aria-controls={`${tab.id}-panel`}
@@ -451,9 +496,9 @@ const SettingsPage: React.FC = () => {
           </div>
 
           {hasUnsavedChanges && (
-            <div className="animate-in fade-in slide-in-from-top-2 mb-4 flex items-center justify-between rounded-lg border border-l-4 border-border border-l-brand-500 bg-surface-secondary p-4 shadow-sm duration-300 dark:border-border-dark dark:border-l-brand-600 dark:bg-surface-dark-secondary">
+            <div className="animate-in fade-in slide-in-from-top-2 mb-4 flex flex-col gap-3 rounded-lg border border-l-4 border-border border-l-brand-500 bg-surface-secondary p-4 shadow-sm duration-300 dark:border-border-dark dark:border-l-brand-600 dark:bg-surface-dark-secondary sm:flex-row sm:items-center sm:justify-between sm:gap-0">
               <div className="flex items-center gap-3">
-                <AlertCircle className="h-5 w-5 text-brand-600 dark:text-brand-500" />
+                <AlertCircle className="h-5 w-5 shrink-0 text-brand-600 dark:text-brand-500" />
                 <span className="text-sm font-semibold text-text-primary dark:text-text-dark-primary">
                   You have unsaved changes
                 </span>
@@ -464,7 +509,7 @@ const SettingsPage: React.FC = () => {
                   onClick={handleCancel}
                   variant="outline"
                   size="sm"
-                  className="text-text-secondary dark:text-text-dark-secondary"
+                  className="flex-1 text-text-secondary dark:text-text-dark-secondary sm:flex-none"
                 >
                   Cancel
                 </Button>
@@ -473,6 +518,7 @@ const SettingsPage: React.FC = () => {
                   onClick={handleSave}
                   variant="primary"
                   size="sm"
+                  className="flex-1 sm:flex-none"
                   isLoading={manualUpdateMutation.isPending}
                   loadingText="Saving..."
                 >
@@ -489,7 +535,7 @@ const SettingsPage: React.FC = () => {
           )}
 
           <ErrorBoundary>
-            <div className="space-y-6">
+            <div className="min-w-0 space-y-6">
               {activeTab === 'general' && (
                 <div role="tabpanel" id="general-panel" aria-labelledby="general-tab">
                   <GeneralSettingsTab
@@ -500,6 +546,9 @@ const SettingsPage: React.FC = () => {
                     onToggleVisibility={toggleFieldVisibility}
                     onDeleteAllChats={handleDeleteAllChats}
                     onNotificationSoundChange={handleNotificationSoundChange}
+                    onSandboxProviderChange={handleSandboxProviderChange}
+                    onAutoCompactDisabledChange={handleAutoCompactDisabledChange}
+                    onCodexAuthChange={handleCodexAuthChange}
                   />
                 </div>
               )}
@@ -547,6 +596,17 @@ const SettingsPage: React.FC = () => {
                     onEditCommand={commandManagement.handleEdit}
                     onDeleteCommand={commandManagement.handleDelete}
                     onToggleCommand={commandManagement.handleToggle}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'prompts' && (
+                <div role="tabpanel" id="prompts-panel" aria-labelledby="prompts-tab">
+                  <PromptsSettingsTab
+                    prompts={localSettings.custom_prompts ?? null}
+                    onAddPrompt={promptCrud.handleAdd}
+                    onEditPrompt={promptCrud.handleEdit}
+                    onDeletePrompt={promptCrud.handleDelete}
                   />
                 </div>
               )}
@@ -635,6 +695,16 @@ const SettingsPage: React.FC = () => {
         onClose={envVarCrud.handleDialogClose}
         onSubmit={envVarCrud.handleSave}
         onEnvVarChange={envVarCrud.handleFormChange}
+      />
+
+      <PromptEditDialog
+        isOpen={promptCrud.isDialogOpen}
+        isEditing={promptCrud.editingIndex !== null}
+        prompt={promptCrud.form}
+        error={promptCrud.formError}
+        onClose={promptCrud.handleDialogClose}
+        onSubmit={promptCrud.handleSave}
+        onPromptChange={promptCrud.handleFormChange}
       />
 
       <TaskDialog

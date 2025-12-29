@@ -24,6 +24,7 @@ from app.models.db_models import Chat, Message, MessageStreamStatus, User
 from app.services.claude_agent import ClaudeAgentService
 from app.services.exceptions import ClaudeAgentException, UserException
 from app.services.sandbox import SandboxService
+from app.services.sandbox_providers import create_sandbox_provider
 from app.services.streaming.events import StreamEvent
 from app.services.user import UserService
 
@@ -103,6 +104,7 @@ def _hydrate_user_and_chat(
         title=chat_data["title"],
         sandbox_id=chat_data.get("sandbox_id"),
         session_id=chat_data.get("session_id"),
+        sandbox_provider=chat_data.get("sandbox_provider"),
     )
     return user, chat
 
@@ -481,6 +483,7 @@ async def process_chat_stream(  # type: ignore[return]
     assistant_message_id: str | None = None,
     thinking_mode: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    is_custom_prompt: bool = False,
 ) -> str:
     user, chat = _hydrate_user_and_chat(user_data, chat_data)
 
@@ -515,6 +518,7 @@ async def process_chat_stream(  # type: ignore[return]
                     session_callback=session_callback,
                     thinking_mode=thinking_mode,
                     attachments=attachments,
+                    is_custom_prompt=is_custom_prompt,
                 )
 
                 try:
@@ -548,7 +552,7 @@ async def process_chat_stream(  # type: ignore[return]
         await _cleanup_task_resources(chat_id, redis_client)
 
 
-async def _initialize_and_process_chat(  # type: ignore[return]
+async def _initialize_and_process_chat(
     task: Any,
     prompt: str,
     system_prompt: str,
@@ -561,6 +565,7 @@ async def _initialize_and_process_chat(  # type: ignore[return]
     assistant_message_id: str | None,
     thinking_mode: str | None,
     attachments: list[dict[str, Any]] | None,
+    is_custom_prompt: bool = False,
 ) -> str:
     async with get_celery_session() as (SessionFactory, engine):
         async with SessionFactory() as db:
@@ -573,14 +578,18 @@ async def _initialize_and_process_chat(  # type: ignore[return]
             except UserException:
                 raise UserException("User settings not found")
 
-            if not user_settings.e2b_api_key:
-                raise UserException("E2B API key is not configured for this user")
+            provider_type = (
+                chat_data.get("sandbox_provider") or user_settings.sandbox_provider
+            )
+            provider = create_sandbox_provider(
+                provider_type=provider_type,
+                api_key=user_settings.e2b_api_key,
+            )
 
-            e2b_api_key = user_settings.e2b_api_key
-
-        async with SandboxService(
-            e2b_api_key=e2b_api_key, session_factory=SessionFactory
-        ) as sandbox_service:
+        sandbox_service = SandboxService(
+            provider=provider, session_factory=SessionFactory
+        )
+        try:
             return await process_chat_stream(
                 task,
                 prompt=prompt,
@@ -595,7 +604,10 @@ async def _initialize_and_process_chat(  # type: ignore[return]
                 thinking_mode=thinking_mode,
                 attachments=attachments,
                 sandbox_service=sandbox_service,
+                is_custom_prompt=is_custom_prompt,
             )
+        finally:
+            await sandbox_service.cleanup()
 
 
 @celery_app.task(bind=True)
@@ -612,6 +624,7 @@ def process_chat(
     assistant_message_id: str | None = None,
     thinking_mode: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    is_custom_prompt: bool = False,
 ) -> str:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -631,6 +644,7 @@ def process_chat(
                 assistant_message_id=assistant_message_id,
                 thinking_mode=thinking_mode,
                 attachments=attachments,
+                is_custom_prompt=is_custom_prompt,
             )
         )
     finally:

@@ -39,6 +39,9 @@ async function createCompletion(
       if (request.thinking_mode) {
         formData.append('thinking_mode', request.thinking_mode);
       }
+      if (request.selected_prompt_name) {
+        formData.append('selected_prompt_name', request.selected_prompt_name);
+      }
       formData.append('permission_mode', request.permission_mode);
 
       const taskResponse = await apiClient.postForm<{

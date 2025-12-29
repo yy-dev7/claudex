@@ -7,6 +7,7 @@ import type {
   UIState,
   UIActions,
 } from '@/types';
+import { MOBILE_BREAKPOINT } from '@/config/constants';
 
 type UIStoreState = ThemeState &
   PermissionModeState &
@@ -14,26 +15,24 @@ type UIStoreState = ThemeState &
   Pick<UIState, 'sidebarOpen' | 'currentView'> &
   Pick<UIActions, 'setSidebarOpen' | 'setCurrentView'>;
 
+const getInitialSidebarState = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return window.innerWidth >= MOBILE_BREAKPOINT;
+};
+
 export const useUIStore = create<UIStoreState>()(
   persist(
     (set) => ({
-      // Theme
       theme: 'dark',
       toggleTheme: () =>
         set((state) => ({
           theme: state.theme === 'dark' ? 'light' : 'dark',
         })),
-
-      // Permission Mode
       permissionMode: 'auto',
       setPermissionMode: (mode) => set({ permissionMode: mode }),
-
-      // Thinking Mode
       thinkingMode: null,
       setThinkingMode: (mode) => set({ thinkingMode: mode }),
-
-      // UI State
-      sidebarOpen: false,
+      sidebarOpen: getInitialSidebarState(),
       currentView: 'agent',
       setSidebarOpen: (isOpen) => set({ sidebarOpen: isOpen }),
       setCurrentView: (view) => set({ currentView: view }),
@@ -44,9 +43,16 @@ export const useUIStore = create<UIStoreState>()(
         theme: state.theme,
         permissionMode: state.permissionMode,
         thinkingMode: state.thinkingMode,
-        sidebarOpen: state.sidebarOpen,
         currentView: state.currentView,
       }),
+      merge: (persisted, current) => {
+        const persistedState = persisted as Partial<UIStoreState> | undefined;
+        return {
+          ...current,
+          ...persistedState,
+          sidebarOpen: getInitialSidebarState(),
+        };
+      },
     },
   ),
 );

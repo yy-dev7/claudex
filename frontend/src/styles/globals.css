@@ -2,14 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-white text-neutral-900 dark:bg-[#09090b] dark:text-white;
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  @apply bg-white text-neutral-900 dark:bg-surface-dark dark:text-white;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 @layer utilities {
+  .h-viewport {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .min-h-viewport {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
   .break-word-wrap {
     word-wrap: break-word;
     overflow-wrap: break-word;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 
   @keyframes fade-in {

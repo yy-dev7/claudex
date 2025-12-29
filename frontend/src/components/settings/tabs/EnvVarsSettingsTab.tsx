@@ -61,9 +61,9 @@ export const EnvVarsSettingsTab: React.FC<EnvVarsSettingsTabProps> = ({
       onDelete={handleDelete}
       renderItem={(envVar) => (
         <>
-          <div className="mb-2 flex items-center gap-2">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <Key className="h-4 w-4 flex-shrink-0 text-brand-600 dark:text-brand-400" />
-            <h3 className="font-mono text-sm font-medium text-text-primary dark:text-text-dark-primary">
+            <h3 className="min-w-0 max-w-full truncate font-mono text-sm font-medium text-text-primary dark:text-text-dark-primary">
               {envVar.key}
             </h3>
           </div>

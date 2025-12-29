@@ -23,6 +23,11 @@ from app.models.db_models import (
 from app.prompts.system_prompt import build_system_prompt_for_chat
 from app.services.refresh_token import RefreshTokenService
 from app.services.sandbox import SandboxService
+from app.services.sandbox_providers import (
+    DockerConfig,
+    SandboxProviderType,
+    create_sandbox_provider,
+)
 from app.services.scheduler import (
     calculate_next_execution,
     check_duplicate_execution,
@@ -156,7 +161,8 @@ async def _validate_user_api_keys(
 
     try:
         user_settings = await user_service.get_user_settings(user.id, db=db)
-        validate_e2b_api_key(user_settings)
+        if user_settings.sandbox_provider == "e2b":
+            validate_e2b_api_key(user_settings)
         await validate_model_api_keys(user_settings, model_id, session_factory)
         return user_settings, None
     except (ValueError, APIKeyValidationError) as e:
@@ -179,9 +185,24 @@ async def _validate_user_api_keys(
 async def _create_and_initialize_sandbox(
     user_settings: Any, user: User, session_factory: Any = None
 ) -> tuple[SandboxService, str]:
-    sandbox_service = SandboxService(
-        e2b_api_key=user_settings.e2b_api_key, session_factory=session_factory
+    provider_type = SandboxProviderType(user_settings.sandbox_provider)
+
+    docker_config = None
+    if provider_type == SandboxProviderType.DOCKER:
+        docker_config = DockerConfig(
+            image=settings.DOCKER_IMAGE,
+            network=settings.DOCKER_NETWORK,
+            host=settings.DOCKER_HOST,
+            preview_base_url=settings.DOCKER_PREVIEW_BASE_URL,
+        )
+
+    provider = create_sandbox_provider(
+        provider_type=provider_type,
+        api_key=user_settings.e2b_api_key,
+        docker_config=docker_config,
     )
+
+    sandbox_service = SandboxService(provider, session_factory=session_factory)
     sandbox_id = await sandbox_service.create_sandbox()
 
     await sandbox_service.initialize_sandbox(
@@ -193,6 +214,7 @@ async def _create_and_initialize_sandbox(
         custom_slash_commands=user_settings.custom_slash_commands,
         custom_agents=user_settings.custom_agents,
         user_id=str(user.id),
+        auto_compact_disabled=user_settings.auto_compact_disabled,
     )
 
     return sandbox_service, sandbox_id
@@ -386,8 +408,8 @@ async def _execute_scheduled_task(task: Any, task_id: str) -> dict[str, Any]:
                     return {"error": str(e)}
 
             finally:
-                await sandbox_service.cleanup()
                 await sandbox_service.delete_sandbox(sandbox_id)
+                await sandbox_service.cleanup()
 
         except Exception as e:
             logger.error("Fatal error in execute_scheduled_task: %s", e)

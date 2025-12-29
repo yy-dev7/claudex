@@ -146,6 +146,20 @@ async function updateIDETheme(sandboxId: string, theme: 'dark' | 'light'): Promi
   });
 }
 
+async function getIDEUrl(sandboxId: string): Promise<string | null> {
+  validateRequired(sandboxId, 'Sandbox ID');
+
+  try {
+    return await serviceCall(async () => {
+      const response = await apiClient.get<{ url: string | null }>(`/sandbox/${sandboxId}/ide-url`);
+      return response?.url ?? null;
+    });
+  } catch (error) {
+    logger.error('IDE URL fetch failed', 'sandboxService', error);
+    return null;
+  }
+}
+
 export const sandboxService = {
   getPreviewLinks,
   getSandboxFilesMetadata,
@@ -157,4 +171,5 @@ export const sandboxService = {
   deleteSecret,
   downloadZip,
   updateIDETheme,
+  getIDEUrl,
 };

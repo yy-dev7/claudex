@@ -20,9 +20,9 @@ const renderHelperText = (helperText?: HelperTextLink | HelperTextCode) => {
 
   if ('code' in helperText) {
     return (
-      <p className="mt-1.5 text-2xs text-text-quaternary dark:text-text-dark-quaternary">
+      <p className="mt-1.5 break-words text-2xs text-text-quaternary dark:text-text-dark-quaternary">
         {helperText.prefix}{' '}
-        <code className="rounded bg-surface-secondary px-1 py-0.5 text-text-primary dark:bg-surface-dark-secondary dark:text-text-dark-primary">
+        <code className="break-all rounded bg-surface-secondary px-1 py-0.5 text-text-primary dark:bg-surface-dark-secondary dark:text-text-dark-primary">
           {helperText.code}
         </code>{' '}
         {helperText.suffix}
@@ -30,13 +30,13 @@ const renderHelperText = (helperText?: HelperTextLink | HelperTextCode) => {
     );
   } else {
     return (
-      <p className="mt-1.5 text-2xs text-text-quaternary dark:text-text-dark-quaternary">
+      <p className="mt-1.5 break-words text-2xs text-text-quaternary dark:text-text-dark-quaternary">
         {helperText.prefix}{' '}
         <a
           href={helperText.href}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
+          className="break-all text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
         >
           {helperText.anchorText}
         </a>

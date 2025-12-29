@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.core.security import get_password_hash
 from app.models.db_models.ai_model import AIModel
 from app.models.db_models.enums import ModelProvider
-from app.models.db_models.user import User
+from app.models.db_models.user import User, UserSettings
 
 SEED_MODELS = [
     {
@@ -120,7 +120,14 @@ async def seed_admin(session: AsyncSession) -> None:
     existing_admin = result.scalar_one_or_none()
 
     if existing_admin:
-        print(f"Admin account already exists: {existing_admin.email}, skipping")
+        print(f"Admin account already exists: {existing_admin.email}")
+        settings_result = await session.execute(
+            select(UserSettings).where(UserSettings.user_id == existing_admin.id)
+        )
+        if not settings_result.scalar_one_or_none():
+            admin_settings = UserSettings(user_id=existing_admin.id)
+            session.add(admin_settings)
+            print(f"Added missing settings for admin: {existing_admin.email}")
         return
 
     admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
@@ -136,6 +143,10 @@ async def seed_admin(session: AsyncSession) -> None:
         is_verified=True,
     )
     session.add(admin_user)
+    await session.flush()
+
+    admin_settings = UserSettings(user_id=admin_user.id)
+    session.add(admin_settings)
     print(f"Added admin account: {admin_email}")
 
 
