@@ -1301,6 +1301,541 @@ class HybridAgentService:
 | **动作模式** | CodeAct（Python 代码） | 可渐进引入 |
 | **多模型** | Claude + Qwen 编排 | 当前单模型，可扩展 |
 
+### 9.10 为什么沙箱运行的是 CLI 而不是 Claude Agent SDK？
+
+这是一个核心架构问题。理解这一点需要先明确两者的本质区别：
+
+```mermaid
+graph TB
+    subgraph "Claude CLI（大脑）"
+        CLI[Claude CLI 二进制]
+        CLI --> BRAIN[AI 推理引擎]
+        CLI --> TOOLS[50+ 内置工具]
+        CLI --> CONTEXT[会话上下文管理]
+        CLI --> LOOP[Tool 执行循环]
+    end
+
+    subgraph "Claude Agent SDK（通信管道）"
+        SDK[Claude Agent SDK]
+        SDK --> TRANSPORT[Transport 接口]
+        SDK --> STREAM[事件流解析]
+        SDK --> PROTOCOL[协议封装]
+    end
+
+    CLI <-->|stdin/stdout| SDK
+```
+
+#### 9.10.1 核心区别
+
+| 组件 | 本质 | 包含 AI 推理？ | 包含工具实现？ |
+|------|------|---------------|---------------|
+| **Claude CLI** | 完整的 AI Agent 二进制 | ✅ 是 | ✅ 50+ 工具 |
+| **Claude Agent SDK** | 通信协议封装 | ❌ 否 | ❌ 否 |
+
+```python
+# Claude Agent SDK 只是一个通信层
+class Transport(ABC):
+    """SDK 提供的抽象接口"""
+    async def write(self, data: str) -> None: ...      # 发送命令
+    def read_messages(self) -> AsyncIterator[dict]: ... # 接收事件
+
+# 它需要有东西来"对话"
+# 在 Claudex 中，对话的对象是 Claude CLI
+```
+
+#### 9.10.2 为什么必须运行 CLI？
+
+```mermaid
+sequenceDiagram
+    participant Backend as Backend
+    participant SDK as Claude Agent SDK
+    participant CLI as Claude CLI (沙箱内)
+    participant Claude as Claude API
+
+    Note over SDK: SDK 只是传递消息
+    Note over CLI: CLI 才是真正的 Agent
+
+    Backend->>SDK: 发送用户消息
+    SDK->>CLI: 通过 Transport 传递
+    CLI->>Claude: 调用 Claude API
+    Claude-->>CLI: 返回推理结果
+
+    loop Tool 执行循环（在 CLI 内部）
+        CLI->>CLI: 解析 Tool Call
+        CLI->>CLI: 执行工具（如 Read, Edit, Bash）
+        CLI->>Claude: 发送 Tool Result
+        Claude-->>CLI: 继续推理
+    end
+
+    CLI-->>SDK: 流式返回事件
+    SDK-->>Backend: 解析后的事件
+```
+
+**关键点**：
+- **SDK 不包含 AI** - 它不能独立工作
+- **CLI 是完整的 Agent** - 包含推理、工具、上下文管理
+- **工具执行在 CLI 内部** - Read, Edit, Bash 等都是 CLI 内置的
+
+#### 9.10.3 如果不用 CLI，需要自己实现什么？
+
+```python
+# Manus 风格：不使用 Claude CLI，自己实现所有能力
+
+class ManusStyleAgentService:
+    """需要自己实现的内容"""
+
+    def __init__(self):
+        self.anthropic = anthropic.AsyncClient()
+        self.tools = self._build_all_tools()  # 需要自己实现
+
+    def _build_all_tools(self) -> list[Tool]:
+        """Claude CLI 有 50+ 内置工具，需要全部自己实现"""
+        return [
+            # 文件操作
+            Tool(name="Read", handler=self._read_file),
+            Tool(name="Write", handler=self._write_file),
+            Tool(name="Edit", handler=self._edit_file),
+            Tool(name="Glob", handler=self._glob_files),
+            Tool(name="Grep", handler=self._grep_content),
+
+            # 终端操作
+            Tool(name="Bash", handler=self._execute_bash),
+
+            # Web 操作
+            Tool(name="WebFetch", handler=self._web_fetch),
+            Tool(name="WebSearch", handler=self._web_search),
+
+            # 笔记本操作
+            Tool(name="NotebookEdit", handler=self._notebook_edit),
+
+            # ... 还有 40+ 其他工具
+        ]
+
+    async def _agentic_loop(self, sandbox_id: str, user_message: str):
+        """需要自己实现 Agent 循环"""
+        messages = [{"role": "user", "content": user_message}]
+
+        while True:
+            # 1. 调用 Claude API
+            response = await self.anthropic.messages.create(
+                model="claude-sonnet-4-20250514",
+                messages=messages,
+                tools=self.tools,
+            )
+
+            # 2. 检查是否需要执行工具
+            if response.stop_reason != "tool_use":
+                break
+
+            # 3. 执行所有 tool calls
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = await self._execute_tool_in_sandbox(
+                        sandbox_id, block.name, block.input
+                    )
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+
+            # 4. 继续对话
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": tool_results})
+```
+
+#### 9.10.4 Claudex 选择 CLI 的原因
+
+```mermaid
+graph TB
+    subgraph "使用 CLI 的优势"
+        A1[复用 50+ 成熟工具]
+        A2[与桌面 Claude Code 行为一致]
+        A3[官方维护和更新]
+        A4[开发成本低]
+    end
+
+    subgraph "使用 CLI 的代价"
+        B1[CLI 必须在沙箱内运行]
+        B2[需要同步资源到沙箱]
+        B3[API Key 进入沙箱]
+        B4[无法自定义工具行为]
+    end
+
+    A1 --> CHOICE[Claudex 的选择]
+    A2 --> CHOICE
+    B1 --> TRADEOFF[权衡]
+    B2 --> TRADEOFF
+```
+
+**Claudex 的设计决策**：
+- 优先复用 Claude Code 的完整能力
+- 接受资源同步的开销
+- 换取开发效率和功能完整性
+
+### 9.11 混合架构详细设计
+
+#### 9.11.1 任务分类策略
+
+```mermaid
+graph TB
+    MSG[用户消息] --> CLASSIFY{任务分类}
+
+    CLASSIFY -->|简单任务| SIMPLE[CodeAct 处理]
+    CLASSIFY -->|复杂任务| COMPLEX[CLI 处理]
+
+    subgraph "简单任务特征"
+        S1[单一代码执行]
+        S2[文件读写操作]
+        S3[简单 Shell 命令]
+        S4[明确的单步操作]
+    end
+
+    subgraph "复杂任务特征"
+        C1[多步骤推理]
+        C2[代码理解/重构]
+        C3[需要上下文的分析]
+        C4[模糊的意图]
+    end
+
+    SIMPLE --> S1
+    SIMPLE --> S2
+    SIMPLE --> S3
+    SIMPLE --> S4
+
+    COMPLEX --> C1
+    COMPLEX --> C2
+    COMPLEX --> C3
+    COMPLEX --> C4
+```
+
+#### 9.11.2 分类器实现
+
+```python
+class TaskClassifier:
+    """任务复杂度分类器"""
+
+    # 简单任务的关键词模式
+    SIMPLE_PATTERNS = [
+        r"^运行\s*(这段|以下)?代码",           # "运行这段代码"
+        r"^执行\s*(命令|脚本)",                # "执行命令"
+        r"^(读取|查看|显示)\s*文件",           # "读取文件"
+        r"^(创建|写入|保存)\s*文件",           # "创建文件"
+        r"^(安装|更新)\s*(依赖|包)",           # "安装依赖"
+        r"^(列出|显示)\s*(目录|文件)",         # "列出目录"
+        r"^git\s+(status|log|diff)",          # 简单 git 操作
+        r"^(计算|求值)",                       # 简单计算
+    ]
+
+    # 复杂任务的关键词模式
+    COMPLEX_PATTERNS = [
+        r"(重构|优化|改进)",                   # 需要理解代码
+        r"(分析|解释|理解)",                   # 需要深度理解
+        r"(实现|开发|构建)\s*功能",            # 功能开发
+        r"(修复|解决)\s*(bug|问题|错误)",      # 需要调试
+        r"(设计|架构)",                        # 架构设计
+        r"(测试|验证)",                        # 测试相关
+        r"(文档|注释)",                        # 文档相关
+        r"(为什么|怎么|如何)",                 # 需要解释
+    ]
+
+    def classify(self, message: str) -> TaskType:
+        """
+        分类任务复杂度
+
+        Returns:
+            TaskType.SIMPLE - 可以用 CodeAct 处理
+            TaskType.COMPLEX - 需要 CLI 完整能力
+            TaskType.UNCERTAIN - 不确定，默认用 CLI
+        """
+        message_lower = message.lower().strip()
+
+        # 1. 检查简单模式
+        for pattern in self.SIMPLE_PATTERNS:
+            if re.search(pattern, message_lower):
+                # 进一步检查是否有复杂化因素
+                if not self._has_complexity_factors(message):
+                    return TaskType.SIMPLE
+
+        # 2. 检查复杂模式
+        for pattern in self.COMPLEX_PATTERNS:
+            if re.search(pattern, message_lower):
+                return TaskType.COMPLEX
+
+        # 3. 基于消息长度和结构的启发式判断
+        if len(message) < 50 and not self._has_multiple_steps(message):
+            return TaskType.SIMPLE
+
+        # 4. 默认使用 CLI（更安全）
+        return TaskType.UNCERTAIN
+
+    def _has_complexity_factors(self, message: str) -> bool:
+        """检查是否有复杂化因素"""
+        complexity_keywords = ["并且", "然后", "同时", "如果", "否则", "所有"]
+        return any(kw in message for kw in complexity_keywords)
+
+    def _has_multiple_steps(self, message: str) -> bool:
+        """检查是否包含多个步骤"""
+        step_indicators = ["1.", "2.", "第一", "第二", "首先", "然后", "最后"]
+        return sum(1 for ind in step_indicators if ind in message) >= 2
+```
+
+#### 9.11.3 混合处理器实现
+
+```python
+class HybridAgentService:
+    """混合架构 Agent 服务"""
+
+    def __init__(
+        self,
+        sandbox_service: SandboxService,
+        claude_agent_service: ClaudeAgentService,  # CLI 模式
+    ):
+        self.sandbox = sandbox_service
+        self.cli_agent = claude_agent_service
+        self.classifier = TaskClassifier()
+        self.codeact_executor = CodeActExecutor(sandbox_service)
+
+    async def process_message(
+        self,
+        sandbox_id: str,
+        message: str,
+        chat_context: ChatContext,
+    ) -> AsyncIterator[StreamEvent]:
+        """处理用户消息"""
+
+        # 1. 分类任务
+        task_type = self.classifier.classify(message)
+
+        # 2. 根据类型选择处理方式
+        if task_type == TaskType.SIMPLE:
+            async for event in self._process_with_codeact(
+                sandbox_id, message
+            ):
+                yield event
+        else:
+            # COMPLEX 或 UNCERTAIN 都使用 CLI
+            async for event in self._process_with_cli(
+                sandbox_id, message, chat_context
+            ):
+                yield event
+
+    async def _process_with_codeact(
+        self,
+        sandbox_id: str,
+        message: str,
+    ) -> AsyncIterator[StreamEvent]:
+        """使用 CodeAct 处理简单任务"""
+
+        yield StreamEvent(type="status", data="使用快速执行模式")
+
+        # 直接使用 Claude API + 简单工具
+        async with anthropic.AsyncClient() as client:
+            response = await client.messages.create(
+                model="claude-sonnet-4-20250514",
+                system=self._simple_system_prompt(),
+                messages=[{"role": "user", "content": message}],
+                tools=self._simple_tools(),
+            )
+
+            # 处理可能的工具调用
+            while response.stop_reason == "tool_use":
+                tool_results = await self._execute_simple_tools(
+                    sandbox_id, response.content
+                )
+
+                yield StreamEvent(
+                    type="tool_result",
+                    data=tool_results
+                )
+
+                response = await client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    messages=[...],
+                    tools=self._simple_tools(),
+                )
+
+            # 返回最终结果
+            for block in response.content:
+                if block.type == "text":
+                    yield StreamEvent(type="text", data=block.text)
+
+    async def _process_with_cli(
+        self,
+        sandbox_id: str,
+        message: str,
+        chat_context: ChatContext,
+    ) -> AsyncIterator[StreamEvent]:
+        """使用 CLI 处理复杂任务"""
+
+        yield StreamEvent(type="status", data="使用完整 Agent 模式")
+
+        # 使用现有的 CLI 处理流程
+        async for event in self.cli_agent.stream_response(
+            sandbox_id=sandbox_id,
+            prompt=message,
+            session_id=chat_context.session_id,
+        ):
+            yield event
+
+    def _simple_tools(self) -> list[dict]:
+        """简单任务只需要少量工具"""
+        return [
+            {
+                "name": "execute_code",
+                "description": "执行 Python 或 Shell 代码",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "language": {"type": "string", "enum": ["python", "bash"]},
+                        "code": {"type": "string"},
+                    },
+                    "required": ["language", "code"],
+                },
+            },
+            {
+                "name": "read_file",
+                "description": "读取文件内容",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                    },
+                    "required": ["path"],
+                },
+            },
+            {
+                "name": "write_file",
+                "description": "写入文件内容",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+        ]
+
+    async def _execute_simple_tools(
+        self,
+        sandbox_id: str,
+        content: list,
+    ) -> list[dict]:
+        """在沙箱中执行简单工具"""
+        results = []
+
+        for block in content:
+            if block.type != "tool_use":
+                continue
+
+            if block.name == "execute_code":
+                if block.input["language"] == "python":
+                    result = await self.sandbox.execute_python(
+                        sandbox_id, block.input["code"]
+                    )
+                else:
+                    result = await self.sandbox.execute_command(
+                        sandbox_id, block.input["code"]
+                    )
+
+            elif block.name == "read_file":
+                result = await self.sandbox.read_file(
+                    sandbox_id, block.input["path"]
+                )
+
+            elif block.name == "write_file":
+                await self.sandbox.write_file(
+                    sandbox_id,
+                    block.input["path"],
+                    block.input["content"],
+                )
+                result = "文件写入成功"
+
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": result,
+            })
+
+        return results
+```
+
+#### 9.11.4 动态升级策略
+
+```mermaid
+stateDiagram-v2
+    [*] --> Classify: 收到消息
+
+    Classify --> CodeAct: 简单任务
+    Classify --> CLI: 复杂任务
+
+    CodeAct --> Success: 执行成功
+    CodeAct --> Escalate: 执行失败/需要更多能力
+
+    Escalate --> CLI: 升级到 CLI
+
+    CLI --> Success: 完成任务
+
+    Success --> [*]
+```
+
+```python
+class DynamicHybridAgent:
+    """支持动态升级的混合 Agent"""
+
+    async def process_with_escalation(
+        self,
+        sandbox_id: str,
+        message: str,
+    ) -> AsyncIterator[StreamEvent]:
+        """
+        先尝试 CodeAct，失败时自动升级到 CLI
+        """
+
+        task_type = self.classifier.classify(message)
+
+        if task_type == TaskType.SIMPLE:
+            try:
+                # 尝试用 CodeAct 处理
+                async for event in self._process_with_codeact(
+                    sandbox_id, message
+                ):
+                    yield event
+                return  # 成功完成
+
+            except (ToolNotFoundError, ComplexTaskError) as e:
+                # 需要升级到 CLI
+                yield StreamEvent(
+                    type="status",
+                    data=f"任务需要更多能力，切换到完整模式: {e}"
+                )
+
+        # 使用 CLI 处理
+        async for event in self._process_with_cli(
+            sandbox_id, message, chat_context
+        ):
+            yield event
+```
+
+#### 9.11.5 混合架构优势
+
+| 场景 | CodeAct 模式 | CLI 模式 |
+|------|-------------|----------|
+| "运行 `npm install`" | ✅ 快速执行 | 过度设计 |
+| "读取 config.json" | ✅ 直接读取 | 过度设计 |
+| "重构这个函数" | 能力不足 | ✅ 完整分析 |
+| "分析代码库架构" | 能力不足 | ✅ 深度理解 |
+| "实现用户认证功能" | 能力不足 | ✅ 多步骤开发 |
+
+**预期收益**：
+- **50-70% 的请求**可能是简单任务，可以用 CodeAct 快速处理
+- 减少 CLI 启动和通信开销
+- 降低沙箱资源消耗
+- 保留 CLI 处理复杂任务的能力
+
 ## 10. 优化建议优先级更新
 
 | 优先级 | 优化项 | 预期收益 | 实现难度 |
